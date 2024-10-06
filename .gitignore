@@ -4,6 +4,7 @@ data/processed/
 
 # (mac) ds_store file
 .DS_Store
+__pycache__
 
 # enviourment
 .env
