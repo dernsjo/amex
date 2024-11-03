@@ -34,6 +34,7 @@ def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
         hide_index=False,
     )
     return edited_df
+
 def calculate_who_pays_what(df: pd.DataFrame) -> dict:
     """
     Calculate how much Axel and Ebba each owe or should be paid back.
@@ -64,36 +65,39 @@ def calculate_who_pays_what(df: pd.DataFrame) -> dict:
 
 def main():
 
-    # Load data from CSV
-    df = lib.load_data()
-    df = lib.format_data(df)
+    # Get date input
+    date = st.text_input("Enter the date:")
+    if date:
+        # Load data from CSV
+        df = lib.load_data(date)
+        df = lib.format_data(df)
     
-    # Store the dataframe in a variable
-    st.session_state.df = df
-    data = st.session_state.df
+        # Store the dataframe in a variable
+        st.session_state.df = df
+        data = st.session_state.df
 
-    # Add Paid By column
-    data = add_column(df,"Paid By")
+        # Add Paid By column
+        data = add_column(df,"Paid By")
 
-    st.title("CSV File Viewer and Editor")
-
-    if not data.empty:
-        st.subheader("Editable Data")
-        
-        # Call the function to allow editing of 'Paid By' column
-        edited_df = edit_paid_by_column(data)
-
-        # Update the session state with the new data
-        st.session_state.data = edited_df
-
-        if st.button('Calculate expenses'):
-            result = calculate_who_pays_what(edited_df)
-            st.write("**Final Amounts to Pay or Be Refunded:**")
-            st.write(result)
-
-        # Save changes button
-        if st.button("Save Changes to CSV"):
-            save_csv(edited_df)
+        st.title("CSV File Viewer and Editor")
+    
+        if not data.empty:
+            st.subheader("Editable Data")
+            
+            # Call the function to allow editing of 'Paid By' column
+            edited_df = edit_paid_by_column(data)
+    
+            # Update the session state with the new data
+            st.session_state.data = edited_df
+    
+            if st.button('Calculate expenses'):
+                result = calculate_who_pays_what(edited_df)
+                st.write("**Final Amounts to Pay or Be Refunded:**")
+                st.write(result)
+    
+            # Save changes button
+            if st.button("Save Changes to CSV"):
+                save_csv(edited_df)
 
 if __name__ == "__main__":
     main()
