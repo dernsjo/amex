@@ -1,14 +1,16 @@
+import os
+
 import pandas as pd
 import numpy as np
 import streamlit as st
 
 import lib
 
-def save_csv(df: pd.DataFrame) -> None:
+def save_csv(df: pd.DataFrame, date: str) -> None:
     """Stores processed data"""
-    min_date = df['Datum'].min()
-    max_date = df['Datum'].max()
-    file_path = f'../data/processed/period-{min_date}-{max_date}.csv'
+    base_dir = "/Users/axeldernsjo/Documents/amex"
+    file_path = os.path.join(base_dir, f"data/processed/period-{date}.csv")
+
     df.to_csv(file_path, index=False)
     st.success("Changes saved successfully.")
     return
@@ -26,7 +28,7 @@ def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
         column_config={
             "Paid By": st.column_config.SelectboxColumn(
                 "Paid By",
-                options=["Axel", "Ebba", "Utlägg", "Delad"],
+                options=["Excludera","Axel", "Ebba", "Utlägg", "Delad"],
                 help="Select who paid for the item.",
             ),
         },
@@ -39,6 +41,9 @@ def calculate_who_pays_what(df: pd.DataFrame) -> dict:
     """
     Calculate how much Axel and Ebba each owe or should be paid back.
     """
+    # Remove excluding transactions
+    df = df[df['Paid By'] != 'Excludera']
+
     # Calculate total expenses
     total_expenses = df['Belopp'].sum()
 
@@ -97,7 +102,7 @@ def main():
     
             # Save changes button
             if st.button("Save Changes to CSV"):
-                save_csv(edited_df)
+                save_csv(edited_df, date)
 
 if __name__ == "__main__":
     main()
