@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 
 def format_data(df: pd.DataFrame) -> pd.DataFrame:
     """Function that change columns to correct types"""
@@ -8,5 +9,7 @@ def format_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_data(date) -> pd.DataFrame:
     """Function that load data"""
-    df = pd.read_csv(f'../data/raw/activity.csv')
+    base_dir = "/Users/axeldernsjo/Documents/amex"
+    file_path = os.path.join(base_dir, "data/raw/activity-202410.csv")
+    df = pd.read_csv(file_path)
     return df
