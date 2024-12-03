@@ -1,14 +1,16 @@
+import os
+
 import pandas as pd
 import numpy as np
 import streamlit as st
 
 import lib
 
-def save_csv(df: pd.DataFrame) -> None:
+def save_csv(df: pd.DataFrame, date: str) -> None:
     """Stores processed data"""
-    min_date = df['Datum'].min()
-    max_date = df['Datum'].max()
-    file_path = f'../data/processed/period-{min_date}-{max_date}.csv'
+    base_dir = "/Users/axeldernsjo/Documents/amex"
+    file_path = os.path.join(base_dir, f"data/processed/period-{date}.csv")
+
     df.to_csv(file_path, index=False)
     st.success("Changes saved successfully.")
     return
@@ -26,7 +28,7 @@ def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
         column_config={
             "Paid By": st.column_config.SelectboxColumn(
                 "Paid By",
-                options=["Axel", "Ebba", "Utlägg", "Delad"],
+                options=["Excludera","Axel", "Ebba", "Utlägg", "Delad"],
                 help="Select who paid for the item.",
             ),
         },
@@ -34,10 +36,14 @@ def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
         hide_index=False,
     )
     return edited_df
+
 def calculate_who_pays_what(df: pd.DataFrame) -> dict:
     """
     Calculate how much Axel and Ebba each owe or should be paid back.
     """
+    # Remove excluding transactions
+    df = df[df['Paid By'] != 'Excludera']
+
     # Calculate total expenses
     total_expenses = df['Belopp'].sum()
 
@@ -64,36 +70,39 @@ def calculate_who_pays_what(df: pd.DataFrame) -> dict:
 
 def main():
 
-    # Load data from CSV
-    df = lib.load_data()
-    df = lib.format_data(df)
+    # Get date input
+    date = st.text_input("Enter the date:")
+    if date:
+        # Load data from CSV
+        df = lib.load_data(date)
+        df = lib.format_data(df)
     
-    # Store the dataframe in a variable
-    st.session_state.df = df
-    data = st.session_state.df
+        # Store the dataframe in a variable
+        st.session_state.df = df
+        data = st.session_state.df
 
-    # Add Paid By column
-    data = add_column(df,"Paid By")
+        # Add Paid By column
+        data = add_column(df,"Paid By")
 
-    st.title("CSV File Viewer and Editor")
-
-    if not data.empty:
-        st.subheader("Editable Data")
-        
-        # Call the function to allow editing of 'Paid By' column
-        edited_df = edit_paid_by_column(data)
-
-        # Update the session state with the new data
-        st.session_state.data = edited_df
-
-        if st.button('Calculate expenses'):
-            result = calculate_who_pays_what(edited_df)
-            st.write("**Final Amounts to Pay or Be Refunded:**")
-            st.write(result)
-
-        # Save changes button
-        if st.button("Save Changes to CSV"):
-            save_csv(edited_df)
+        st.title("CSV File Viewer and Editor")
+    
+        if not data.empty:
+            st.subheader("Editable Data")
+            
+            # Call the function to allow editing of 'Paid By' column
+            edited_df = edit_paid_by_column(data)
+    
+            # Update the session state with the new data
+            st.session_state.data = edited_df
+    
+            if st.button('Calculate expenses'):
+                result = calculate_who_pays_what(edited_df)
+                st.write("**Final Amounts to Pay or Be Refunded:**")
+                st.write(result)
+    
+            # Save changes button
+            if st.button("Save Changes to CSV"):
+                save_csv(edited_df, date)
 
 if __name__ == "__main__":
     main()
