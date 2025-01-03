@@ -1,23 +1,27 @@
+import os
+
 import pandas as pd
 import numpy as np
 import streamlit as st
 
 import lib
 
-def save_csv(df: pd.DataFrame) -> None:
+def save_csv(df: pd.DataFrame, date: str) -> None:
     """Stores processed data"""
-    min_date = df['Datum'].min()
-    max_date = df['Datum'].max()
-    file_path = f'../data/processed/period-{min_date}-{max_date}.csv'
+    base_dir = "/Users/axeldernsjo/Documents/amex"
+    file_path = os.path.join(base_dir, f"data/processed/period-{date}.csv")
+
     df.to_csv(file_path, index=False)
     st.success("Changes saved successfully.")
     return
+
 
 def add_column(df: pd.DataFrame,name: str) -> pd.DataFrame:
     """Initiate a Column with the value Delad"""
     if name not in df.columns:
         df[name] = "Delad"  # Initialize column as Delad
     return df
+
 
 def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
     """Allows the user to edit the 'Paid By' column using Streamlit's data_editor"""
@@ -26,7 +30,7 @@ def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
         column_config={
             "Paid By": st.column_config.SelectboxColumn(
                 "Paid By",
-                options=["Axel", "Ebba", "Utlägg", "Delad"],
+                options=["Excludera","Axel", "Ebba", "Utlägg", "Delad"],
                 help="Select who paid for the item.",
             ),
         },
@@ -34,10 +38,15 @@ def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
         hide_index=False,
     )
     return edited_df
+
+
 def calculate_who_pays_what(df: pd.DataFrame) -> dict:
     """
     Calculate how much Axel and Ebba each owe or should be paid back.
     """
+    # Remove excluding transactions
+    df = df[df['Paid By'] != 'Excludera']
+
     # Calculate total expenses
     total_expenses = df['Belopp'].sum()
 
@@ -62,38 +71,50 @@ def calculate_who_pays_what(df: pd.DataFrame) -> dict:
         'Controll': total_expenses
     }
 
+
 def main():
-
-    # Load data from CSV
-    df = lib.load_data()
-    df = lib.format_data(df)
     
-    # Store the dataframe in a variable
-    st.session_state.df = df
-    data = st.session_state.df
+    input_date = st.text_input(label="Enter date in YYYYMM format:", value="")
+    
+    if input_date:
+        try:
+            # Load data from CSV for the given date
+            df = lib.load_data(date=input_date)
+            # Format the loaded data
+            df = lib.format_data(df)
+            st.write("Data loaded and formatted successfully!")
 
-    # Add Paid By column
-    data = add_column(df,"Paid By")
+             # Store the dataframe in a variable
+            st.session_state.df = df
+            data = st.session_state.df
 
-    st.title("CSV File Viewer and Editor")
+            # Add Paid By column
+            data = add_column(df,"Paid By")
 
-    if not data.empty:
-        st.subheader("Editable Data")
+            if not data.empty:
+                st.title("CSV File Viewer and Editor")
+                st.subheader("Editable Data")
         
-        # Call the function to allow editing of 'Paid By' column
-        edited_df = edit_paid_by_column(data)
+                # Call the function to allow editing of 'Paid By' column
+                edited_df = edit_paid_by_column(data)
 
-        # Update the session state with the new data
-        st.session_state.data = edited_df
+                # Update the session state with the new data
+                st.session_state.data = edited_df
 
-        if st.button('Calculate expenses'):
-            result = calculate_who_pays_what(edited_df)
-            st.write("**Final Amounts to Pay or Be Refunded:**")
-            st.write(result)
+                if st.button('Calculate expenses'):
+                    result = calculate_who_pays_what(edited_df)
+                    st.write("**Final Amounts to Pay or Be Refunded:**")
+                    st.write(result)
 
-        # Save changes button
-        if st.button("Save Changes to CSV"):
-            save_csv(edited_df)
+                # Save changes button
+                if st.button("Save Changes to CSV"):
+                    save_csv(edited_df,date=input_date)
+
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+    else:
+        st.warning("Please enter a valid date to load data.")
+
 
 if __name__ == "__main__":
     main()
