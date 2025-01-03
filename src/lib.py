@@ -7,7 +7,9 @@ def format_data(df: pd.DataFrame) -> pd.DataFrame:
     df['Datum'] = pd.to_datetime(df['Datum'])    
     return df
 
-def load_data(date) -> pd.DataFrame:
+  
+def load_data(date: str) -> pd.DataFrame:
+
     """Function that load data"""
     base_dir = "/Users/axeldernsjo/Documents/amex"
     file_path = os.path.join(base_dir, f"data/raw/activity-{date}.csv")
