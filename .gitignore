@@ -9,6 +9,7 @@ __pycache__
 # enviourment
 .env
 env
+myenv/
 
 #Ignore everything in this directory
 #*
