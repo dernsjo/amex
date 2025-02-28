@@ -13,7 +13,7 @@ class Expense(Base):
     __tablename__ = "expenses"
     
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date)
+    date = Column(String)
     description = Column(String)
     amount = Column(Float)
     paid_by = Column(String, default="Split")  # Default to "Split"

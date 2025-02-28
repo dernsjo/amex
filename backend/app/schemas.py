@@ -16,7 +16,7 @@ class User(UserBase):
         from_attributes = True
 
 class ExpenseBase(BaseModel):
-    date: date
+    date: str
     description: str
     amount: float
     paid_by: str = "Split"

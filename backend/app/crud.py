@@ -53,8 +53,8 @@ def create_expenses_batch(db: Session, expenses: list):
     db.commit()
     return db_expenses
 
-def get_expense(db: Session, expense_id: int):
-    return db.query(models.Expense).filter(models.Expense.id == expense_id).first()
+def get_expense(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Expense).offset(skip).limit(limit).all()
 
 def update_expense_paid_by(db: Session, expense_id: int, paid_by: str):
     """Update the 'paid_by' field for a specific expense"""
