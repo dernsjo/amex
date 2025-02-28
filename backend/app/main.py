@@ -2,9 +2,9 @@ import os
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.routes import router
-from app.database import engine, Base  # Import your database connection and Base
-from app import models
+from routes import router
+from database import engine, Base  # Import your database connection and Base
+import models
 
 DATABASE_PATH = "expenses.db"
 

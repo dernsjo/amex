@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 import pandas as pd
-from . import models, schemas
+import models, schemas
 from datetime import date
 
 def create_user(db: Session, user: schemas.UserCreate):

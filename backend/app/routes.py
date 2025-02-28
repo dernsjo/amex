@@ -5,8 +5,8 @@ import pandas as pd
 import io
 from datetime import datetime
 
-from . import crud, models, schemas
-from .database import get_db
+import crud, models, schemas
+from database import get_db
 
 router = APIRouter()
 
