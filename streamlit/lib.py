@@ -9,9 +9,10 @@ def format_data(df: pd.DataFrame) -> pd.DataFrame:
 
   
 def load_data(date: str) -> pd.DataFrame:
-
+    #C:\Users\AxelDernsjö\Documents\git\amex\data\raw\activity-202502.xlsx
     """Function that load data"""
-    base_dir = "/Users/axeldernsjo/Documents/amex"
-    file_path = os.path.join(base_dir, f"data/raw/activity-{date}.csv")
+    #base_dir = "/Users/AxelDernsjö/Documents/git/amex/"
+    #file_path = os.path.join(base_dir, f"data/raw/activity-{date}.csv")
+    file_path = '../data/raw/activity-202502.csv'
     df = pd.read_csv(file_path)
     return df

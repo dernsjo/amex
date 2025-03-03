@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-import lib
+import lib as lib
 
 def save_csv(df: pd.DataFrame, date: str) -> None:
     """Stores processed data"""
