@@ -53,6 +53,18 @@ def create_expenses_batch(db: Session, expenses: list):
     db.commit()
     return db_expenses
 
+def delete_expense(db: Session, expense_id: int):
+    """Delete an expense by ID and return success status"""
+    expense = db.query(models.Expense).filter(models.Expense.id == expense_id).first()
+    
+    if not expense:
+        return False 
+    
+    db.delete(expense)
+    db.commit()
+    
+    return True  # Expense deleted successfully
+
 def get_expense(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Expense).offset(skip).limit(limit).all()
 

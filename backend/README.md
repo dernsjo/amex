@@ -9,7 +9,7 @@ pip install -r requirements.txt
 ``` 
 
 ## Usage
-- To start the FastAPI server, run the following command:
+- To start the FastAPI server, run the following command in the folder backend/app/:
 ```bash
 uvicorn app.main:app --reload
 ```

@@ -97,3 +97,8 @@ def calculate_expenses(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 @router.post("/expenses/add-expense")
 def save_expense(expense: schemas.ExpenseBase, db: Session = Depends(get_db)):
     return crud.add_expense(db, expense)
+
+# Delete an expense
+@router.delete("/expenses/{expense_id}")
+def delete_expense_route(expense_id: int, db: Session = Depends(get_db)):
+    return crud.delete_expense(db, expense_id)
