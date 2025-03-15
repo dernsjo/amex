@@ -76,6 +76,15 @@ def update_expenses_batch(db: Session, expense_updates: list):
     db.commit()
     return updated_expenses
 
+
+def delete_expense(db: Session, expense_id: int):
+    """Delete an expense by its ID"""
+    expense = db.query(models.Expense).filter(models.Expense.id == expense_id).first()
+    if expense:
+        db.delete(expense)
+        db.commit()
+    return expense
+
 def calculate_who_pays_what(expenses: list, users: list):
     """Calculate how much each person owes or should be paid back"""
     # Convert to DataFrame for easier manipulation

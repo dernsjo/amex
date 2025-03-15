@@ -16,9 +16,18 @@ function ExpenseTable({ expenses, paidByOptions, fetchExpenses }) {
         try {
             await updatePaidBy(expenseId, updatedPaidBy);
             setEditingExpenseId(null);
-            fetchExpenses();  // Refresh the list
+            fetchExpenses();  // Refresh the table
         } catch (error) {
             console.error("Error updating paid_by:", error);
+        }
+    };
+
+    const handleDeleteExpense = async (expenseId) => {
+        try {
+            await deleteExpense(expenseId);
+            fetchExpenses(); // Refresh the table after deletion
+        } catch (error) {
+            console.error("Error deleting expense:", error);
         }
     };
 
@@ -62,7 +71,7 @@ function ExpenseTable({ expenses, paidByOptions, fetchExpenses }) {
                                 )}
                             </td>
                             <td>
-                                <button onClick={() => deleteExpense(expense.id)}>Delete</button>
+                                <button onClick={() => handleDeleteExpense(expense.id)}>Delete</button>
                             </td>
                         </tr>
                     ))}

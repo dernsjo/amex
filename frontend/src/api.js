@@ -5,17 +5,25 @@ const API_BASE_URL = "http://localhost:8000"; // Update if needed
 // Helper function to handle API requests
 const apiRequest = async (method, url, data = null) => {
     try {
-        const response = await axios({
+        const config = {
             method,
             url: `${API_BASE_URL}${url}`,
-            data,
-        });
+        };
+
+        if (method.toLowerCase() === "get" || method.toLowerCase() === "delete") {
+            config.params = data;  // Send data as query parameters
+        } else {
+            config.data = data;  // Send data in request body
+        }
+
+        const response = await axios(config);
         return response.data;
     } catch (error) {
         console.error(`API Error (${method} ${url}):`, error.response?.data || error.message);
         throw error; // Propagate error for proper handling in components
     }
 };
+
 
 // Fetch all users
 export const getUsers = () => apiRequest("get", "/users/");
@@ -37,7 +45,8 @@ export const updatePaidBy = (expenseId, newPaidBy) =>
     apiRequest("put", `/expenses/update-paid-by`, [{ id: expenseId, paid_by: newPaidBy }]);
 
 // Delete an expense
-export const deleteExpense = (expenseId) => apiRequest("delete", `/expenses/${expenseId}`);
+export const deleteExpense = (expenseId) => 
+    apiRequest("delete", "/expenses/delete-expense", {expense_id: expenseId});
 
 // Upload expenses via CSV
 export const uploadExpenses = async (file) => {

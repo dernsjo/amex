@@ -82,7 +82,6 @@ def update_expenses_paid_by(
     db: Session = Depends(get_db)
 ):
     """Update the 'paid_by' field for multiple expenses"""
-    print("Received data:", expense_updates)
     updated_expenses = crud.update_expenses_batch(db, expense_updates)
     return updated_expenses
 
@@ -98,3 +97,8 @@ def calculate_expenses(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 @router.post("/expenses/add-expense")
 def save_expense(expense: schemas.ExpenseBase, db: Session = Depends(get_db)):
     return crud.add_expense(db, expense)
+
+# Delete an expense
+@router.delete("/expenses/delete-expense")
+def delete_expense(expense_id: int, db: Session = Depends(get_db)):
+    return crud.delete_expense(db, expense_id)
