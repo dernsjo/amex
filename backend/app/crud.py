@@ -23,7 +23,6 @@ def delete_user(db: Session, user_id: int):
         db.commit()
     return
 
-
 def create_expense(db: Session, expense: schemas.ExpenseCreate):
     db_expense = models.Expense(**expense.model_dump())
     db.add(db_expense)
@@ -92,46 +91,3 @@ def delete_expense(db: Session, expense_id: int):
         db.delete(expense)
         db.commit()
     return expense
-
-def calculate_who_pays_what(expenses: list, users: list):
-    """Calculate how much each person owes or should be paid back"""
-    # Convert to DataFrame for easier manipulation
-    df = pd.DataFrame([{
-        'Belopp': exp.amount,
-        'Paid By': exp.paid_by
-    } for exp in expenses])
-    
-    # Remove excluding transactions
-    df = df[df['Paid By'] != 'Exclude']
-
-    # Calculate total expenses
-    total_expenses = df['Belopp'].sum()
-
-    # Get all user names
-    user_names = [user.name for user in users]
-    
-    # Sum of amounts paid by each user and by "Outlay"
-    sum_outlay = df.loc[df['Paid By'] == 'Outlay', 'Belopp'].sum()
-    
-    # Calculate individual user payments
-    user_payments = {}
-    for user in user_names:
-        user_payments[user] = df.loc[df['Paid By'] == user, 'Belopp'].sum()
-    
-    # Calculate the remaining amount to be divided equally (Split)
-    split_payments = df.loc[df['Paid By'] == 'Split', 'Belopp'].sum()
-    equal_share = split_payments / len(user_names) if user_names else 0
-    
-    # Calculate the final amount each user should pay or receive
-    final_amounts = {}
-    for user in user_names:
-        final_amounts[user] = user_payments.get(user, 0) + equal_share
-    
-    total_calculated = sum(final_amounts.values()) + sum_outlay
-    
-    return {
-        'expenses': final_amounts,
-        'outlay': float(sum_outlay),
-        'total': float(total_calculated),
-        'control': float(total_expenses)
-    }

@@ -4,6 +4,8 @@ import CreateUser from "./components/UpdateUser";
 import UserTable from "./components/UserTable";
 import ExpenseForm from "./components/ExpenseForm";
 import ExpenseTable from "./components/ExpenseTable";
+import TransactionUploader from "./components/csvUploader";
+import ExpenseSplitter from "./components/expenseSplitter";
 import "./App.css";
 
 function App() {
@@ -28,6 +30,11 @@ function App() {
         setExpenses(expensesData);
     };
 
+    // This is the function that will be passed to TransactionUploader
+    const onTransactionsLoaded = () => {
+        fetchExpenses(); // Refresh the expenses after upload
+    };
+
     return (
         <div style={{ textAlign: "center", padding: "20px" }}>
             <h1>Expense Tracker</h1>
@@ -37,12 +44,19 @@ function App() {
 
             {/* Create User */}
             <CreateUser fetchUsers={fetchUsers} />
-            
+
+            {/* Transaction Uploader */}
+            <TransactionUploader onTransactionsLoaded={onTransactionsLoaded} />
+
             {/* Expense Form */}
             <ExpenseForm paidByOptions={paidByOptions} fetchExpenses={fetchExpenses} />
             
             {/* Expense Table */}
             <ExpenseTable expenses={expenses} paidByOptions={paidByOptions} fetchExpenses={fetchExpenses} />
+
+            {/* Expense Splitter */}
+            <ExpenseSplitter expenses={expenses} />
+            
         </div>
     );
 }

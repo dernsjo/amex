@@ -24,7 +24,6 @@ const apiRequest = async (method, url, data = null) => {
     }
 };
 
-
 // Fetch all users
 export const getUsers = () => apiRequest("get", "/users/");
 
@@ -64,5 +63,26 @@ export const uploadExpenses = async (file) => {
     } catch (error) {
         console.error("Error uploading expenses:", error);
         return false; // Return false to indicate failure
+    }
+};
+
+export const calculateExpenseSplit = async (expenses) => {
+    try {
+        const response = await fetch("/api/expenses/calculate", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ expenses }),  // Send expenses to backend
+        });
+
+        if (!response.ok) {
+            throw new Error("Failed to calculate expense split");
+        }
+
+        return await response.json();  // Return the response body (the calculated split)
+    } catch (error) {
+        console.error("Error calculating expense split:", error);
+        throw new Error("Error calculating expense split");
     }
 };
