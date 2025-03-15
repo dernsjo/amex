@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { getUsers, getPaidByOptions, getExpenses } from "./api";
+import UserLoader from "./components/UserLoader"; // Import the new component
 import UserForm from "./components/UserForm";
 import ExpenseForm from "./components/ExpenseForm";
 import ExpenseTable from "./components/ExpenseTable";
@@ -30,11 +31,10 @@ function App() {
             <h1>Expense Tracker</h1>
 
             <UserForm fetchUsers={fetchUsers} />
-
-            <h2>Users</h2>
-            <button onClick={fetchUsers}>Load Users</button>
-            <ul>{users.map((user) => <li key={user.id}>{user.name}</li>)}</ul>
-
+            
+            {/* Replace the old users section with the new component */}
+            <UserLoader users={users} fetchUsers={fetchUsers} />
+            
             <ExpenseForm paidByOptions={paidByOptions} fetchExpenses={fetchExpenses} />
             
             <ExpenseTable expenses={expenses} paidByOptions={paidByOptions} fetchExpenses={fetchExpenses} />
