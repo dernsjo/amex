@@ -23,6 +23,10 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
 
+@router.delete("/users/delete-user")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    return crud.delete_user(db, user_id)
+
 @router.get("/expenses/paid-by-options",response_model=List[str])
 def get_paid_by_options(db: Session = Depends(get_db)):
     """Get valid options for the 'paid_by' field"""

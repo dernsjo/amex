@@ -31,6 +31,9 @@ export const getUsers = () => apiRequest("get", "/users/");
 // Create a new user
 export const createUser = (name) => apiRequest("post", "/users/", { name });
 
+// Delete a user
+export const deleteUser = (userId) => apiRequest("delete", "/users/delete-user", { user_id: userId });
+
 // Fetch paid-by options
 export const getPaidByOptions = () => apiRequest("get", "/expenses/paid-by-options");
 
