@@ -82,6 +82,7 @@ def update_expenses_paid_by(
     db: Session = Depends(get_db)
 ):
     """Update the 'paid_by' field for multiple expenses"""
+    print("Received data:", expense_updates)
     updated_expenses = crud.update_expenses_batch(db, expense_updates)
     return updated_expenses
 
