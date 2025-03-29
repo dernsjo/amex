@@ -8,7 +8,7 @@ import lib
 
 def save_csv(df: pd.DataFrame, date: str) -> None:
     """Stores processed data"""
-    base_dir = "/Users/axeldernsjo/Documents/amex"
+    base_dir = os.getcwd()
     file_path = os.path.join(base_dir, f"data/processed/period-{date}.csv")
 
     df.to_csv(file_path, index=False)

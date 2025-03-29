@@ -11,7 +11,8 @@ def format_data(df: pd.DataFrame) -> pd.DataFrame:
 def load_data(date: str) -> pd.DataFrame:
 
     """Function that load data"""
-    base_dir = "/Users/axeldernsjo/Documents/amex"
-    file_path = os.path.join(base_dir, f"data/raw/activity-{date}.csv")
+    base_dir = os.getcwd()
+    print(base_dir)
+    file_path = os.path.join(base_dir, f"../data/raw/activity-{date}.csv")
     df = pd.read_csv(file_path)
     return df
