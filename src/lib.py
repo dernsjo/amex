@@ -12,7 +12,14 @@ def load_data(date: str) -> pd.DataFrame:
 
     """Function that load data"""
     base_dir = os.getcwd()
-    print(base_dir)
     file_path = os.path.join(base_dir, f"../data/raw/activity-{date}.csv")
     df = pd.read_csv(file_path)
     return df
+
+def save_csv(df: pd.DataFrame, date: str) -> None:
+    """Stores raw data"""
+    base_dir = os.getcwd()
+    file_path = os.path.join(base_dir, f"../data/raw/activity-{date}.csv")
+
+    df.to_csv(file_path, index=False)
+    return
