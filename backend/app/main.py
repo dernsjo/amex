@@ -2,9 +2,9 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import router
-from database import engine, Base  # Import your database connection and Base
-import models
+from .routes import router
+from .database import engine, Base  # Import your database connection and Base
+from . import models
 
 DATABASE_PATH = "expenses.db"
 

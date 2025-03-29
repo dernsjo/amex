@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict
 import pandas as pd
 import io
 from datetime import datetime
 
-import crud, models, schemas
-from database import get_db
+from . import crud, schemas
+from .database import get_db
 
 router = APIRouter()
 
@@ -22,6 +22,10 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
+
+@router.delete("/users/delete-user")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    return crud.delete_user(db, user_id)
 
 @router.get("/expenses/paid-by-options",response_model=List[str])
 def get_paid_by_options(db: Session = Depends(get_db)):
@@ -85,15 +89,63 @@ def update_expenses_paid_by(
     updated_expenses = crud.update_expenses_batch(db, expense_updates)
     return updated_expenses
 
-@router.get("/expenses/calculate", response_model=schemas.CalculationResult)
-def calculate_expenses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Calculate who pays what for specific transactions"""
-    expenses = crud.get_expense(db, skip, limit)
-    users = crud.get_users(db)
-    result = crud.calculate_who_pays_what(expenses, users)
-    return result
-
 # Save a new expense
 @router.post("/expenses/add-expense")
 def save_expense(expense: schemas.ExpenseBase, db: Session = Depends(get_db)):
     return crud.add_expense(db, expense)
+
+@router.delete("/expenses/delete-expense")
+def delete_expense(expense_id: int, db: Session = Depends(get_db)):
+    return crud.delete_expense(db, expense_id)
+
+@router.post("/expenses/calculate", response_model=Dict)
+def calculate_who_pays_what(
+    expenses: List[schemas.Expense], db: Session = Depends(get_db)
+):
+    """Calculate who pays what and how much each person owes or should be paid back."""
+
+    # Check if expenses were provided in the request body
+    if not expenses:
+        raise HTTPException(status_code=400, detail="No expenses provided")
+
+    try:
+        # Perform the calculation based on the provided expenses
+        calculated_split = calculate_who_pays_what_logic(expenses)
+
+        return calculated_split
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating expense split: {str(e)}")
+
+
+def calculate_who_pays_what_logic(expenses: List[schemas.Expense]):
+    """Calculate who pays what based on the provided expenses."""
+    import pandas as pd
+
+    # Convert expenses to DataFrame for easier processing
+    df = pd.DataFrame([{
+        'amount': exp.amount,
+        'paid_by': exp.paid_by
+    } for exp in expenses])
+
+    # Remove excluding transactions
+    df = df[df['paid_by'] != 'Exclude']
+
+    # Calculate total expenses
+    total_expenses = df['amount'].sum()
+
+    # Get unique user names
+    user_names = df['paid_by'].unique()
+
+    # Sum of amounts paid by each user
+    user_payments = {user: df[df['paid_by'] == user]['amount'].sum() for user in user_names}
+
+    # Calculate the amount each user should receive or pay
+    equal_share = total_expenses / len(user_names) if len(user_names) else 0
+    final_amounts = {user: user_payments.get(user, 0) - equal_share for user in user_names}
+
+    return {
+        'expenses': final_amounts,
+        'total_expenses': total_expenses,
+        'equal_share': equal_share,
+    }
