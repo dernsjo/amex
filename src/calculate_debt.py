@@ -1,10 +1,9 @@
 import os
 import datetime
-
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import streamlit as st
-
 import lib
 
 def save_csv(df: pd.DataFrame, date: str) -> None:
@@ -16,30 +15,73 @@ def save_csv(df: pd.DataFrame, date: str) -> None:
     st.success("Changes saved successfully.")
     return
 
-
-def add_column(df: pd.DataFrame,name: str) -> pd.DataFrame:
-    """Initiate a Column with the value Delad"""
+def add_column(df: pd.DataFrame, name: str, default_value="Delad") -> pd.DataFrame:
+    """Initiate a Column if missing"""
     if name not in df.columns:
-        df[name] = "Delad"  # Initialize column as Delad
+        df[name] = default_value
     return df
 
 
-def edit_paid_by_column(df: pd.DataFrame) -> pd.DataFrame:
-    """Allows the user to edit the 'Paid By' column using Streamlit's data_editor"""
+def edit_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Allows user to edit 'Paid By' and 'Category' columns using Streamlit's data_editor"""
     edited_df = st.data_editor(
         df,
         column_config={
             "Paid By": st.column_config.SelectboxColumn(
                 "Paid By",
-                options=["Excludera","Axel", "Ebba", "Utlägg", "Delad"],
+                options=["Excludera", "Axel", "Ebba", "Utlägg", "Delad"],
                 help="Select who paid for the item.",
             ),
+            "Category": st.column_config.SelectboxColumn(
+                "Category",
+                options=["Shopping", "Groceries", "Other"],
+                help="Select expense category.",
+            ),
         },
-        disabled=[],  # Replace "Other_Columns" with actual column names if you need any columns to be disabled
+        disabled=[],
         hide_index=False,
     )
     return edited_df
 
+def plot_expenses_by_category(df: pd.DataFrame):
+    """Creates a stacked bar plot showing sum per category and person using Matplotlib"""
+    df_filtered = df[df['Paid By'].isin(['Axel', 'Ebba', 'Utlägg', 'Delad'])]
+
+    grouped = df_filtered.groupby(['Category', 'Paid By'], as_index=False)['Belopp'].sum()
+
+    # Pivot for easier plotting
+    pivot_df = grouped.pivot(index='Category', columns='Paid By', values='Belopp').fillna(0)
+
+    # Reference (target) values per category
+    targets = {
+        "Groceries": 6000,
+        "Other": 4000,
+        "Shopping": 10000
+    }
+
+    # --- Plot ---
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Plot stacked bars
+    pivot_df.plot(kind='bar', stacked=True, ax=ax)
+
+    # Add target bars behind each category
+    for i, category in enumerate(pivot_df.index):
+        if category in targets:
+            target_value = targets[category]
+            # Draw a horizontal dashed line at the target value for this category
+            ax.plot([i - 0.4, i + 0.4], [target_value, target_value], "k--", lw=2, label="_nolegend_")
+            ax.text(i, target_value + 200, f"Target: {target_value}", ha="center", va="bottom", fontsize=8, color="black")
+
+    ax.set_title("Expenses per Category and Person", fontsize=14, pad=10)
+    ax.set_xlabel("Category")
+    ax.set_ylabel("Total Amount (SEK)")
+    ax.grid(axis="y", linestyle="--", alpha=0.7)
+    ax.legend(title="Paid By")
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+
+    st.pyplot(fig)
 
 def calculate_who_pays_what(df: pd.DataFrame) -> dict:
     """
@@ -74,50 +116,47 @@ def calculate_who_pays_what(df: pd.DataFrame) -> dict:
 
 
 def main():
-    
-    # CSV File Upload Button
+    """Main scrpit"""
     uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
     date = datetime.datetime.now().strftime("%Y-%m-%d")
-    
+
     if uploaded_file:
         try:
-            # Load data from CSV for the given date
-            #df = lib.load_data(date=input_date)
             df = pd.read_csv(uploaded_file)
-            # Format the loaded data
             df = lib.format_data(df)
             st.write("Data loaded and formatted successfully!")
 
-            #save_csv(df, date=date)
-
-             # Store the dataframe in a variable
             st.session_state.df = df
             data = st.session_state.df
 
-            # Add Paid By column
-            data = add_column(df,"Paid By")
+            # Add missing columns
+            data = add_column(data, "Paid By", "Delad")
+            data = add_column(data, "Category", "Other")
 
             if not data.empty:
                 st.title("CSV File Viewer and Editor")
                 st.subheader("Editable Data")
-        
-                # Call the function to allow editing of 'Paid By' column
-                edited_df = edit_paid_by_column(data)
 
-                # Update the session state with the new data
+                edited_df = edit_columns(data)
                 st.session_state.data = edited_df
 
+                # Calculate button
                 if st.button('Calculate expenses'):
                     result = calculate_who_pays_what(edited_df)
                     st.write("**Final Amounts to Pay or Be Refunded:**")
                     st.write(result)
 
+                    # --- New: Plot per category/person ---
+                    st.subheader("Expense Breakdown by Category and Person")
+                    plot_expenses_by_category(edited_df)
+
                 # Save changes button
                 if st.button("Save Changes to CSV"):
-                    save_csv(edited_df,date=input_date)
+                    save_csv(edited_df, date=date)
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
+
 
 if __name__ == "__main__":
     main()
