@@ -1,4 +1,5 @@
 import os
+import datetime
 
 import pandas as pd
 import numpy as np
@@ -74,15 +75,20 @@ def calculate_who_pays_what(df: pd.DataFrame) -> dict:
 
 def main():
     
-    input_date = st.text_input(label="Enter date in YYYYMM format:", value="")
+    # CSV File Upload Button
+    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+    date = datetime.datetime.now().strftime("%Y-%m-%d")
     
-    if input_date:
+    if uploaded_file:
         try:
             # Load data from CSV for the given date
-            df = lib.load_data(date=input_date)
+            #df = lib.load_data(date=input_date)
+            df = pd.read_csv(uploaded_file)
             # Format the loaded data
             df = lib.format_data(df)
             st.write("Data loaded and formatted successfully!")
+
+            #save_csv(df, date=date)
 
              # Store the dataframe in a variable
             st.session_state.df = df
@@ -112,9 +118,6 @@ def main():
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
-    else:
-        st.warning("Please enter a valid date to load data.")
-
 
 if __name__ == "__main__":
     main()
