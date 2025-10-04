@@ -88,7 +88,7 @@ def main():
             df = lib.format_data(df)
             st.write("Data loaded and formatted successfully!")
 
-            save_csv(df, date=date)
+            #save_csv(df, date=date)
 
              # Store the dataframe in a variable
             st.session_state.df = df
