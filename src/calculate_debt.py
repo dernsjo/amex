@@ -34,7 +34,7 @@ def edit_columns(df: pd.DataFrame) -> pd.DataFrame:
             ),
             "Category": st.column_config.SelectboxColumn(
                 "Category",
-                options=["Shopping", "Groceries", "Other"],
+                options=["Shopping", "Groceries","Eating out", "Other"],
                 help="Select expense category.",
             ),
         },
@@ -55,8 +55,9 @@ def plot_expenses_by_category(df: pd.DataFrame):
     # Reference (target) values per category
     targets = {
         "Groceries": 6000,
-        "Other": 4000,
-        "Shopping": 10000
+        "Shopping": 8000,
+        "Eating out": 2000,
+        "Other": 4000
     }
 
     # --- Plot ---
