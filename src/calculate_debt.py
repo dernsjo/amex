@@ -22,6 +22,41 @@ def add_column(df: pd.DataFrame, name: str, default_value="Delad") -> pd.DataFra
     return df
 
 
+CATEGORY_KEYWORDS = {
+    "Groceries": [
+        "hemköp", "hemkop", "ica", "coop", "lidl", "willys", "willy",
+        "netto", "city gross", "citygross", "maxi", "prisma", "mataffär",
+        "bra mat", "saluhall", "matbutik", "snabbköp", "konsum",
+    ],
+    "Eating out": [
+        "restaurang", "restaurant", "pizzeria", "mcdonalds", "mcdonald",
+        "burger", "subway", "sushi", "café", "cafe", "bistro", "grill",
+        "autogrill", "bar ", "pub ", "7-eleven", "pressbyrån", "pressbyran",
+        "max hamburgare", "foodora", "wolt", "pizza",
+    ],
+    "Shopping": [
+        "zara", "h&m", "ikea", "apple", "stadium", "elgiganten", "amazon",
+        "kappahl", "lindex", "indiska", "asos", "zalando", "boozt",
+        "webhallen", "komplett", "mediamarkt", "kicks", "åhléns", "ahléns",
+    ],
+}
+
+
+def map_category(description: str) -> str:
+    """Return a category based on keyword matching in the description."""
+    desc_lower = description.lower()
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        if any(kw in desc_lower for kw in keywords):
+            return category
+    return "Other"
+
+
+def apply_category_mapping(df: pd.DataFrame) -> pd.DataFrame:
+    """Pre-fill the Category column using text matching on Beskrivning."""
+    df["Category"] = df["Beskrivning"].apply(map_category)
+    return df
+
+
 def edit_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Allows user to edit 'Paid By' and 'Category' columns using Streamlit's data_editor"""
     edited_df = st.data_editor(
@@ -132,7 +167,7 @@ def main():
 
             # Add missing columns
             data = add_column(data, "Paid By", "Delad")
-            data = add_column(data, "Category", "Other")
+            data = apply_category_mapping(data)
 
             if not data.empty:
                 st.title("CSV File Viewer and Editor")

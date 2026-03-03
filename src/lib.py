@@ -3,7 +3,7 @@ import os
 
 def format_data(df: pd.DataFrame) -> pd.DataFrame:
     """Function that change columns to correct types"""
-    df['Belopp'] = df['Belopp'].str.replace(',', '.').astype(float)
+    df['Belopp'] = df['Belopp'].str.replace(',', '.').str.replace('\u2212', '-').astype(float)
     df['Datum'] = pd.to_datetime(df['Datum'])    
     return df
 
