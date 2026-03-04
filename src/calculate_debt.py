@@ -32,12 +32,24 @@ CATEGORY_KEYWORDS = {
         "restaurang", "restaurant", "pizzeria", "mcdonalds", "mcdonald",
         "burger", "subway", "sushi", "café", "cafe", "bistro", "grill",
         "autogrill", "bar ", "pub ", "7-eleven", "pressbyrån", "pressbyran",
-        "max hamburgare", "foodora", "wolt", "pizza",
+        "max hamburgare", "foodora", "wolt", "pizza","thai w"
     ],
     "Shopping": [
         "zara", "h&m", "ikea", "apple", "stadium", "elgiganten", "amazon",
         "kappahl", "lindex", "indiska", "asos", "zalando", "boozt",
         "webhallen", "komplett", "mediamarkt", "kicks", "åhléns", "ahléns",
+        "nk", "malina", "soft goat"
+    ],
+    "Transportation": [
+        "sl ", "sl\t", "tunnelbana", "sj", "sj ab", "buss",
+        "taxi", "uber", "bolt ", "cabify", "vy ", "mtr ", "skytrain",
+        "arlanda express", "flygbussarna", "flixbus",
+    ],
+    "Travel": [
+        "hotel", "hotell", "airbnb", "booking.com", "expedia", "hostel",
+        "resort", "inn ", "apt ", "apartment", "sas ", "norwegian",
+        "ryanair", "easyjet", "wizz", "lufthansa", "british airways",
+        "flyg", "airport", "flygplats",
     ],
 }
 
@@ -69,7 +81,7 @@ def edit_columns(df: pd.DataFrame) -> pd.DataFrame:
             ),
             "Category": st.column_config.SelectboxColumn(
                 "Category",
-                options=["Shopping", "Groceries","Eating out", "Other"],
+                options=["Shopping", "Groceries", "Eating out", "Transportation", "Travel", "Other"],
                 help="Select expense category.",
             ),
         },
@@ -89,10 +101,12 @@ def plot_expenses_by_category(df: pd.DataFrame):
 
     # Reference (target) values per category
     targets = {
-        "Groceries": 6000,
-        "Shopping": 8000,
+        "Groceries": 5000,
+        "Shopping": 5000,
         "Eating out": 2000,
-        "Other": 4000
+        "Transportation": 2000,
+        "Travel": 2000,
+        "Other": 4000,
     }
 
     # --- Plot ---
