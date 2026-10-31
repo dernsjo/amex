@@ -1,26 +1,33 @@
-# FastAPI SQLite Backend
+# Backend
 
-This is a simple backend API built using FastAPI, SQLite, and SQLAlchemy. It serves as a basic template to help you get started with building APIs with FastAPI and managing data with SQLAlchemy.
+FastAPI + SQLAlchemy 2.0. Domain logic lives in `../core` (`spending_core`); this
+package only handles HTTP and persistence.
 
-## Installation
-- Install dependencies
+## Database
+Without configuration the API uses a SQLite file at `backend/expenses.db`.
+
+For Postgres (recommended, and what will be used in production):
 ```bash
-pip install -r requirements.txt
-``` 
-
-## Usage
-- To start the FastAPI server, run the following command:
-```bash
-uvicorn app.main:app --reload
+docker compose up -d                 # from the repo root
+cp .env.example .env                 # points DATABASE_URL at the container
 ```
---reload enables auto-reloading of the server during development.
-- The server will be running at http://127.0.0.1:8000.
 
-## Development
-For local development, you can edit and update any of the following files:
+Schema changes go through Alembic:
+```bash
+alembic upgrade head                                  # apply migrations
+alembic revision --autogenerate -m "describe change"  # after editing app/models.py
+```
+`tests/test_migrations.py` fails if models and migrations drift apart.
 
-- app/crud.py: Contains the logic for interacting with the database.
-- app/models.py: Defines the database models (tables).
-- app/schemas.py: Defines the Pydantic schemas for request and response validation.
-- app/routes.py: Defines the API routes and endpoints.
-- app/database.py: Manages the database connection and session.
+## Run
+```bash
+fastapi dev app/main.py     # auto-reload, http://localhost:8000
+fastapi run app/main.py     # production mode: no reload, listens on 0.0.0.0
+```
+
+## Layout
+- `app/models.py`: database tables
+- `app/schemas.py`: request/response models
+- `app/crud.py`: database access
+- `app/routes.py`: endpoints
+- `app/settings.py`: configuration from env / `.env`
