@@ -16,3 +16,6 @@ myenv/
 #*
 # Except this file
 !.gitignore 
+# python packaging / tooling
+*.egg-info/
+.pytest_cache/

@@ -1,24 +1,24 @@
-import React, { useEffect, useState } from "react";
-import { deleteUser, getUsers } from "../api";
+import { useState } from "react";
+import { deleteUser, errorMessage } from "../api";
+import type { User } from "../api";
 
-function UserTable() {
-    const [users, setUsers] = useState([]);
+interface Props {
+    users: User[];
+    fetchUsers: () => Promise<void>;
+}
+
+function UserTable({ users, fetchUsers }: Props) {
     const [showTable, setShowTable] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (showTable) {
-            loadUsers();
+    const handleDeleteUser = async (userId: number) => {
+        setError(null);
+        try {
+            await deleteUser(userId);
+            await fetchUsers();
+        } catch (e) {
+            setError(errorMessage(e));
         }
-    }, [showTable]);
-
-    const loadUsers = async () => {
-        const data = await getUsers();
-        setUsers(data);
-    };
-
-    const handleDeleteUser = async (userId) => {
-        await deleteUser(userId);
-        loadUsers();
     };
 
     return (
@@ -27,8 +27,9 @@ function UserTable() {
             <button onClick={() => setShowTable(!showTable)}>
                 {showTable ? "Hide Users" : "Show Users"}
             </button>
+            {error && <p role="alert">{error}</p>}
             {showTable && (
-                <table border="1">
+                <table border={1}>
                     <thead>
                         <tr>
                             <th>ID</th>

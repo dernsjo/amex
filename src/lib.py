@@ -1,9 +1,10 @@
 import pandas as pd
 import os
+from spending_core import format_minor, parse_amount
 
 def format_data(df: pd.DataFrame) -> pd.DataFrame:
     """Function that change columns to correct types"""
-    df['Belopp'] = df['Belopp'].str.replace(',', '.').str.replace('\u2212', '-').astype(float)
+    df['Belopp'] = df['Belopp'].map(lambda v: float(format_minor(parse_amount(v))))
     df['Datum'] = pd.to_datetime(df['Datum'])    
     return df
 

@@ -1,5 +1,7 @@
-fastapi==0.115.8
-uvicorn==0.34.0
+# Also needs ../core (spending_core): install from the repo root, see README.md
+fastapi[standard]==0.115.8
 SQLAlchemy==2.0.38
-pandas==2.2.3
+alembic==1.14.1
+pydantic-settings==2.7.1
+psycopg[binary]==3.2.4
 python-multipart==0.0.20

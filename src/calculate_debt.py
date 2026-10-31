@@ -4,7 +4,21 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import streamlit as st
+from decimal import Decimal
+from spending_core import (
+    DEFAULT_CATEGORIES,
+    DEFAULT_TARGETS_SEK,
+    Allocation,
+    Line,
+    allocation_from_label,
+    categorize,
+    format_minor,
+    settle,
+    to_minor,
+)
 import lib
+
+MEMBERS = ["Axel", "Ebba"]
 
 def save_csv(df: pd.DataFrame, date: str) -> None:
     """Stores processed data"""
@@ -22,50 +36,9 @@ def add_column(df: pd.DataFrame, name: str, default_value="Delad") -> pd.DataFra
     return df
 
 
-CATEGORY_KEYWORDS = {
-    "Groceries": [
-        "hemköp", "hemkop", "ica", "coop", "lidl", "willys", "willy",
-        "netto", "city gross", "citygross", "maxi", "prisma", "mataffär",
-        "bra mat", "saluhall", "matbutik", "snabbköp", "konsum",
-    ],
-    "Eating out": [
-        "restaurang", "restaurant", "pizzeria", "mcdonalds", "mcdonald",
-        "burger", "subway", "sushi", "café", "cafe", "bistro", "grill",
-        "autogrill", "bar ", "pub ", "7-eleven", "pressbyrån", "pressbyran",
-        "max hamburgare", "foodora", "wolt", "pizza","thai w"
-    ],
-    "Shopping": [
-        "zara", "h&m", "ikea", "apple", "stadium", "elgiganten", "amazon",
-        "kappahl", "lindex", "indiska", "asos", "zalando", "boozt",
-        "webhallen", "komplett", "mediamarkt", "kicks", "åhléns", "ahléns",
-        "nk", "malina", "soft goat"
-    ],
-    "Transportation": [
-        "sl ", "sl\t", "tunnelbana", "sj", "sj ab", "buss",
-        "taxi", "uber", "bolt ", "cabify", "vy ", "mtr ", "skytrain",
-        "arlanda express", "flygbussarna", "flixbus",
-    ],
-    "Travel": [
-        "hotel", "hotell", "airbnb", "booking.com", "expedia", "hostel",
-        "resort", "inn ", "apt ", "apartment", "sas ", "norwegian",
-        "ryanair", "easyjet", "wizz", "lufthansa", "british airways",
-        "flyg", "airport", "flygplats",
-    ],
-}
-
-
-def map_category(description: str) -> str:
-    """Return a category based on keyword matching in the description."""
-    desc_lower = description.lower()
-    for category, keywords in CATEGORY_KEYWORDS.items():
-        if any(kw in desc_lower for kw in keywords):
-            return category
-    return "Other"
-
-
 def apply_category_mapping(df: pd.DataFrame) -> pd.DataFrame:
     """Pre-fill the Category column using text matching on Beskrivning."""
-    df["Category"] = df["Beskrivning"].apply(map_category)
+    df["Category"] = df["Beskrivning"].apply(categorize)
     return df
 
 
@@ -76,12 +49,12 @@ def edit_columns(df: pd.DataFrame) -> pd.DataFrame:
         column_config={
             "Paid By": st.column_config.SelectboxColumn(
                 "Paid By",
-                options=["Excludera", "Axel", "Ebba", "Utlägg", "Delad"],
+                options=["Excludera", *MEMBERS, "Utlägg", "Delad"],
                 help="Select who paid for the item.",
             ),
             "Category": st.column_config.SelectboxColumn(
                 "Category",
-                options=["Shopping", "Groceries", "Eating out", "Transportation", "Travel", "Other"],
+                options=DEFAULT_CATEGORIES,
                 help="Select expense category.",
             ),
         },
@@ -92,22 +65,14 @@ def edit_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def plot_expenses_by_category(df: pd.DataFrame):
     """Creates a stacked bar plot showing sum per category and person using Matplotlib"""
-    df_filtered = df[df['Paid By'].isin(['Axel', 'Ebba', 'Utlägg', 'Delad'])]
+    df_filtered = df[df['Paid By'].isin([*MEMBERS, 'Utlägg', 'Delad'])]
 
     grouped = df_filtered.groupby(['Category', 'Paid By'], as_index=False)['Belopp'].sum()
 
     # Pivot for easier plotting
     pivot_df = grouped.pivot(index='Category', columns='Paid By', values='Belopp').fillna(0)
 
-    # Reference (target) values per category
-    targets = {
-        "Groceries": 5000,
-        "Shopping": 5000,
-        "Eating out": 2000,
-        "Transportation": 2000,
-        "Travel": 2000,
-        "Other": 4000,
-    }
+    targets = DEFAULT_TARGETS_SEK
 
     # --- Plot ---
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -137,31 +102,19 @@ def calculate_who_pays_what(df: pd.DataFrame) -> dict:
     """
     Calculate how much Axel and Ebba each owe or should be paid back.
     """
-    # Remove excluding transactions
-    df = df[df['Paid By'] != 'Excludera']
-
-    # Calculate total expenses
-    total_expenses = df['Belopp'].sum()
-
-    # Sum of amounts paid by each category
-    sum_utlägg = df.loc[df['Paid By'] == 'Utlägg', 'Belopp'].sum()
-    sum_axel = df.loc[df['Paid By'] == 'Axel', 'Belopp'].sum()
-    sum_ebba = df.loc[df['Paid By'] == 'Ebba', 'Belopp'].sum()
-
-    # Calculate the remaining amount to be divided equally
-    remaining_amount = total_expenses - sum_utlägg - sum_axel - sum_ebba
-    equal_share = remaining_amount / 2
-
-    # Calculate the final amount Axel and Ebba should pay or receive
-    axel_final = sum_axel + equal_share
-    ebba_final = sum_ebba + equal_share
+    lines = [
+        Line(to_minor(Decimal(str(amount))), *allocation_from_label(paid_by, MEMBERS))
+        for amount, paid_by in zip(df['Belopp'], df['Paid By'])
+    ]
+    result = settle(lines, dict.fromkeys(MEMBERS, 1))
+    kr = lambda minor: float(format_minor(minor))
 
     return {
-        'Axel': axel_final,
-        'Ebba': ebba_final,
-        'Utlägg': sum_utlägg,
-        'Totalt': axel_final+ebba_final+sum_utlägg,
-        'Controll': total_expenses
+        'Axel': kr(result.per_member['Axel']),
+        'Ebba': kr(result.per_member['Ebba']),
+        'Utlägg': kr(result.outlay),
+        'Totalt': kr(result.total),
+        'Controll': kr(sum(l.amount_minor for l in lines if l.allocation != Allocation.EXCLUDED))
     }
 
 
