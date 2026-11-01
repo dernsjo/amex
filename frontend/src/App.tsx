@@ -8,7 +8,7 @@ import AccountPanel from "./components/AccountPanel";
 import HouseholdPanel from "./components/HouseholdPanel";
 import TransactionForm from "./components/TransactionForm";
 import TransactionTable from "./components/TransactionTable";
-import TransactionUploader from "./components/TransactionUploader";
+import ImportWizard from "./components/ImportWizard";
 import SettlementCard from "./components/SettlementCard";
 import "./App.css";
 
@@ -101,7 +101,7 @@ function Home() {
 
             <HouseholdPanel me={me} householdId={householdId} onChanged={fetchAll} />
 
-            <TransactionUploader accounts={myAccounts} onTransactionsLoaded={fetchTransactions} />
+            <ImportWizard accounts={myAccounts} onImported={() => fetchAll()} />
 
             <TransactionForm accounts={myAccounts} categories={categories} fetchTransactions={fetchTransactions} />
 

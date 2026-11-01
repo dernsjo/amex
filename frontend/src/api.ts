@@ -32,6 +32,7 @@ export interface Member extends Person {
     email: string;
     role: Role;
     split_weight: number;
+    pending: boolean; // added by email but hasn't signed in yet
 }
 
 export interface Household {
@@ -46,6 +47,7 @@ export interface Account {
     currency: string;
     owner: Person;
     household_id: number | null;
+    import_config: ImportConfig | null; // how the next upload will be read
     members: Person[]; // who a transaction can be marked as personal for
 }
 
@@ -69,11 +71,57 @@ export interface NewTransaction {
     category?: string;
 }
 
+export interface CsvMapping {
+    date_column: string;
+    description_column: string;
+    amount_column: string;
+    decimal_separator: "," | ".";
+    spending_is_negative: boolean;
+    date_format: string | null; // strptime format; null tries the common ones
+}
+
+export interface ImportConfig {
+    importer: string; // a built-in importer id, or "csv" with a mapping
+    mapping: CsvMapping | null;
+}
+
+export type SuggestedMapping = Omit<CsvMapping, "date_column" | "description_column" | "amount_column"> & {
+    date_column: string | null;
+    description_column: string | null;
+    amount_column: string | null;
+};
+
+export interface ImportPreview {
+    filename: string;
+    config: ImportConfig | null;
+    source: "requested" | "saved" | "detected" | "guessed" | "none";
+    importers: { id: string; name: string }[];
+    suggested_mapping: SuggestedMapping;
+    columns: string[];
+    sample_rows: string[][];
+    transactions: {
+        booked_on: string;
+        description: string;
+        amount_minor: number;
+        category: string;
+        duplicate: boolean;
+    }[];
+    new_count: number;
+    duplicate_count: number;
+    already_imported_at: string | null;
+    error: string | null;
+}
+
 export interface ImportResult {
     id: number;
+    account_id: number;
+    importer: string;
     filename: string;
+    period_start: string | null;
+    period_end: string | null;
     transaction_count: number;
     duplicate_count: number;
+    created_at: string;
 }
 
 export interface Settlement {
@@ -109,8 +157,10 @@ export const createHousehold = async (name: string) => (await api.post<Household
 
 export const getHousehold = async (id: number) => (await api.get<Household>(`/households/${id}`)).data;
 
-export const addMember = async (householdId: number, email: string) =>
-    (await api.post<Household>(`/households/${householdId}/members`, { email })).data;
+/** Add by email; someone who hasn't signed in yet becomes a pending member under `displayName`. */
+export const addMember = async (householdId: number, email: string, displayName?: string) =>
+    (await api.post<Household>(`/households/${householdId}/members`, { email, display_name: displayName || null }))
+        .data;
 
 export const updateMember = async (
     householdId: number,
@@ -139,10 +189,25 @@ export const deleteAccount = async (accountId: number) => {
     await api.delete(`/accounts/${accountId}`);
 };
 
-export const uploadImport = async (accountId: number, file: File) => {
+const importForm = (file: File, config?: ImportConfig) => {
     const formData = new FormData();
     formData.append("file", file);
-    return (await api.post<ImportResult>(`/accounts/${accountId}/imports`, formData)).data;
+    if (config) formData.append("config", JSON.stringify(config));
+    return formData;
+};
+
+/** Read a file without storing anything. Without a config, the account's saved one or auto-detection is used. */
+export const previewImport = async (accountId: number, file: File, config?: ImportConfig) =>
+    (await api.post<ImportPreview>(`/accounts/${accountId}/imports/preview`, importForm(file, config))).data;
+
+export const confirmImport = async (accountId: number, file: File, config?: ImportConfig) =>
+    (await api.post<ImportResult>(`/accounts/${accountId}/imports`, importForm(file, config))).data;
+
+export const getImports = async (accountId: number) =>
+    (await api.get<ImportResult[]>(`/accounts/${accountId}/imports`)).data;
+
+export const undoImport = async (accountId: number, importId: number) => {
+    await api.delete(`/accounts/${accountId}/imports/${importId}`);
 };
 
 // Transactions

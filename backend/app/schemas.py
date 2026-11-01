@@ -1,5 +1,7 @@
 from datetime import date as Date
+from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from spending_core import Allocation
@@ -39,6 +41,7 @@ class Member(Person):
     email: str
     role: Role
     split_weight: int
+    pending: bool  # added by email but hasn't signed in yet
 
 
 class HouseholdCreate(BaseModel):
@@ -56,7 +59,8 @@ class Household(BaseModel):
 
 
 class MemberAdd(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+    email: str = Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+$")
+    display_name: str | None = Field(None, min_length=1, max_length=100)  # for someone who hasn't signed in
 
 
 class MemberUpdate(BaseModel):
@@ -64,6 +68,81 @@ class MemberUpdate(BaseModel):
 
     split_weight: int | None = Field(None, ge=0, le=1000)
     role: Role | None = None
+
+
+# Imports
+
+
+class CsvMapping(BaseModel):
+    """Mirrors spending_core.CsvMapping."""
+
+    date_column: str = Field(min_length=1)
+    description_column: str = Field(min_length=1)
+    amount_column: str = Field(min_length=1)
+    decimal_separator: Literal[",", "."] = ","
+    spending_is_negative: bool = True
+    date_format: str | None = None  # strptime format; None tries the common ones
+
+
+class ImportConfig(BaseModel):
+    """Mirrors spending_core.ImportConfig: a built-in importer id, or "csv" with a mapping."""
+
+    importer: str
+    mapping: CsvMapping | None = None
+
+
+class ImporterInfo(BaseModel):
+    id: str
+    name: str
+
+
+class SuggestedMapping(BaseModel):
+    """A guess to prefill the mapping form; columns that couldn't be guessed are null."""
+
+    date_column: str | None
+    description_column: str | None
+    amount_column: str | None
+    decimal_separator: Literal[",", "."]
+    spending_is_negative: bool
+    date_format: str | None
+
+
+class PreviewTransaction(BaseModel):
+    booked_on: Date
+    description: str
+    amount_minor: int
+    category: str
+    duplicate: bool  # already imported into this account; skipped on confirm
+
+
+class ImportPreview(BaseModel):
+    filename: str
+    # How the file was read and why: "requested" (sent with the upload), "saved"
+    # (the account's last config), "detected" (a built-in importer recognized it),
+    # "guessed" (columns guessed from the header), or "none".
+    config: ImportConfig | None
+    source: Literal["requested", "saved", "detected", "guessed", "none"]
+    importers: list[ImporterInfo]
+    suggested_mapping: SuggestedMapping
+    columns: list[str]
+    sample_rows: list[list[str]]  # the first raw rows, for choosing columns
+    transactions: list[PreviewTransaction]
+    new_count: int
+    duplicate_count: int
+    already_imported_at: datetime | None  # when this exact file was imported before
+    error: str | None  # why the file couldn't be read with `config`; fix the config and preview again
+
+
+class ImportResult(Orm):
+    id: int
+    account_id: int
+    importer: str
+    filename: str
+    period_start: Date | None
+    period_end: Date | None
+    transaction_count: int
+    duplicate_count: int
+    created_at: datetime
 
 
 # Accounts
@@ -87,6 +166,7 @@ class Account(BaseModel):
     currency: str
     owner: Person
     household_id: int | None
+    import_config: ImportConfig | None  # how the next upload will be read
     # Who a transaction on this account can be marked as personal for.
     members: list[Person]
 
@@ -128,14 +208,6 @@ class Transaction(Orm):
     allocation: Allocation
     member_id: int | None
     category: str | None
-
-
-class ImportResult(Orm):
-    id: int
-    account_id: int
-    filename: str
-    transaction_count: int
-    duplicate_count: int
 
 
 # Settlement

@@ -13,6 +13,7 @@ const HouseholdPanel = ({ me, householdId, onChanged }: Props) => {
     const [household, setHousehold] = useState<Household | null>(null);
     const [newName, setNewName] = useState("");
     const [email, setEmail] = useState("");
+    const [name, setName] = useState("");
     const [error, setError] = useState<string | null>(null);
 
     const fetchHousehold = useCallback(async () => {
@@ -46,8 +47,9 @@ const HouseholdPanel = ({ me, householdId, onChanged }: Props) => {
         event.preventDefault();
         if (!household) return;
         run(async () => {
-            setHousehold(await addMember(household.id, email));
+            setHousehold(await addMember(household.id, email, name.trim()));
             setEmail("");
+            setName("");
         });
     };
 
@@ -105,7 +107,10 @@ const HouseholdPanel = ({ me, householdId, onChanged }: Props) => {
                 <tbody>
                     {household.members.map((m) => (
                         <tr key={m.user_id}>
-                            <td>{m.display_name}</td>
+                            <td>
+                                {m.display_name}
+                                {m.pending && <em> (hasn't signed in yet)</em>}
+                            </td>
                             <td>{m.email}</td>
                             <td>{m.role}</td>
                             <td>
@@ -137,12 +142,22 @@ const HouseholdPanel = ({ me, householdId, onChanged }: Props) => {
                 <form onSubmit={handleAddMember}>
                     <input
                         type="email"
-                        placeholder="Email of someone who has signed in"
+                        placeholder="Email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
                     />
+                    <input
+                        type="text"
+                        placeholder="Name (if they haven't signed in yet)"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                    />
                     <button type="submit">Add member</button>
+                    <p style={{ fontSize: "0.85em" }}>
+                        Someone who hasn't signed in yet can be split with right away; they join when they first
+                        sign in with this email.
+                    </p>
                 </form>
             )}
             {error && <p role="alert">{error}</p>}

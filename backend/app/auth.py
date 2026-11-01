@@ -9,7 +9,7 @@ from functools import lru_cache
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -66,7 +66,10 @@ def get_current_user(
 
     user = db.scalars(select(models.User).where(models.User.auth_subject == subject)).first()
     if user is None:
-        user = models.User(auth_subject=subject, email=email, display_name=email.split("@")[0] or "Me")
+        user = _claim_placeholder(db, claims) or models.User(
+            email=email, display_name=email.split("@")[0] or "Me"
+        )
+        user.auth_subject = subject
         db.add(user)
         try:
             db.commit()
@@ -77,3 +80,19 @@ def get_current_user(
         user.email = email
         db.commit()
     return user
+
+
+def _claim_placeholder(db: Session, claims: dict) -> models.User | None:
+    """The member row someone added for this email before they signed in, if any.
+
+    Only with a verified email, so nobody can take over a placeholder by signing
+    up with an address they don't control.
+    """
+    email = claims.get("email")
+    if not email or (claims.get("user_metadata") or {}).get("email_verified") is not True:
+        return None
+    return db.scalars(
+        select(models.User).where(
+            models.User.auth_subject.is_(None), func.lower(models.User.email) == email.lower()
+        )
+    ).first()

@@ -36,3 +36,23 @@ def test_parse_amount_rejects_garbage(raw):
 def test_format_minor_round_trips():
     assert format_minor(-12345) == Decimal("-123.45")
     assert format_minor(5) == Decimal("0.05")
+
+
+@pytest.mark.parametrize(
+    ("raw", "separator", "expected"),
+    [
+        ("1.234,56", ",", 123456),
+        ("-1.234,56", ",", -123456),
+        ("1,234.56", ".", 123456),
+        ("12,5", ",", 1250),
+        ("12.5", ".", 1250),
+        ("1 234", ",", 123400),
+    ],
+)
+def test_parse_amount_with_known_separator(raw, separator, expected):
+    assert parse_amount(raw, separator) == expected
+
+
+def test_parse_amount_rejects_unknown_separator():
+    with pytest.raises(ValueError, match="Decimal separator"):
+        parse_amount("1", ";")

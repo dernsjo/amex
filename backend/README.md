@@ -30,6 +30,15 @@ Who can see what is decided in one place, `app/access.py`: your own accounts,
 plus accounts shared into households you belong to. `tests/test_isolation.py`
 checks that nothing else leaks.
 
+## Imports
+Uploading is two calls with the same file: `POST /accounts/{id}/imports/preview`
+shows how the file was read (`source`: detected, guessed, saved...), the rows,
+and which are duplicates; `POST /accounts/{id}/imports` stores the new rows.
+Both take an optional `config` form field (a JSON `ImportConfig`) to override
+how the file is read; a confirmed import saves it on the account, so the next
+upload needs no config. Raw files are never stored, only their hash.
+The importers themselves live in `spending_core.importers`.
+
 ## Run
 ```bash
 fastapi dev app/main.py     # auto-reload, http://localhost:8000
@@ -42,5 +51,6 @@ fastapi run app/main.py     # production mode: no reload, listens on 0.0.0.0
 - `app/auth.py`: token verification, current user
 - `app/access.py`: what the current user may see
 - `app/crud.py`: database access
+- `app/imports.py`: upload → preview → confirm
 - `app/routes/`: endpoints, one module per resource
 - `app/settings.py`: configuration from env / `.env`
