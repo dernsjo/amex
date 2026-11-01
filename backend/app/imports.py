@@ -5,7 +5,6 @@ is never kept (only its hash, to recognize a re-upload).
 """
 
 import hashlib
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from spending_core import (
@@ -14,7 +13,6 @@ from spending_core import (
     ImportConfig,
     ImportFileError,
     ParsedTransaction,
-    categorize,
     dedupe_hashes,
     importer_for,
     read_table,
@@ -23,7 +21,8 @@ from spending_core import (
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import crud, models, schemas
+from . import categories, crud, models, schemas
+from .access import Scope
 
 PREVIEW_SAMPLE_ROWS = 5
 IMPORTERS = [schemas.ImporterInfo(id=i.id, name=i.name) for i in BUILTIN_IMPORTERS] + [
@@ -74,6 +73,7 @@ def prepare(
             error = str(e)
 
     hashes = dedupe_hashes(acc.id, parsed)
+    categorize = categories.categorizer(db, Scope.of(acc))
     duplicates = set(
         db.scalars(
             select(models.Transaction.dedupe_hash).where(
@@ -132,7 +132,7 @@ def confirm(db: Session, acc: models.Account, user: models.User, prepared: Prepa
     db.add(imp)
     db.flush()
 
-    new = _new_transactions(acc, imp, parsed, prepared.hashes, prepared.duplicates)
+    new = _new_transactions(acc, imp, prepared)
     db.add_all(new)
     imp.transaction_count = len(new)
     imp.duplicate_count = len(parsed) - len(new)
@@ -142,13 +142,7 @@ def confirm(db: Session, acc: models.Account, user: models.User, prepared: Prepa
     return imp
 
 
-def _new_transactions(
-    acc: models.Account,
-    imp: models.Import,
-    parsed: Sequence[ParsedTransaction],
-    hashes: Sequence[str],
-    duplicates: set[str],
-) -> list[models.Transaction]:
+def _new_transactions(acc: models.Account, imp: models.Import, prepared: Prepared) -> list[models.Transaction]:
     allocation, member_id = crud.default_allocation(acc)
     return [
         models.Transaction(
@@ -161,9 +155,9 @@ def _new_transactions(
             currency=acc.currency,
             allocation=allocation,
             member_id=member_id,
-            category=categorize(t.description),
+            category=row.category,  # as previewed
             dedupe_hash=h,
         )
-        for t, h in zip(parsed, hashes, strict=True)
-        if h not in duplicates
+        for t, row, h in zip(prepared.parsed, prepared.preview.transactions, prepared.hashes, strict=True)
+        if h not in prepared.duplicates
     ]

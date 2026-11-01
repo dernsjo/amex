@@ -2,7 +2,7 @@ from fractions import Fraction
 
 import pytest
 
-from spending_core import Allocation, Line, allocation_from_label, settle
+from spending_core import Allocation, Line, allocation_from_label, settle, settle_by_category
 
 S, P, O, X = Allocation.SHARED, Allocation.PERSONAL, Allocation.OUTLAY, Allocation.EXCLUDED
 EVEN = {"Axel": 1, "Ebba": 1}
@@ -82,3 +82,15 @@ def test_allocation_from_label(label, expected):
 def test_unknown_label():
     with pytest.raises(ValueError, match="Unknown paid-by label"):
         allocation_from_label("Nobody", EVEN)
+
+
+def test_settle_by_category():
+    lines = [
+        ("Groceries", Line(1001, Allocation.SHARED)),
+        ("Groceries", Line(500, Allocation.PERSONAL, "B")),
+        ("Travel", Line(300, Allocation.SHARED)),
+    ]
+    result = settle_by_category(lines, {"A": 1, "B": 1})
+    assert result["Groceries"].per_member == {"A": 501, "B": 1000}
+    assert result["Groceries"].shared == 1001
+    assert result["Travel"].per_member == {"A": 150, "B": 150}

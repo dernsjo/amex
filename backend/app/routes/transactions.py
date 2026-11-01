@@ -1,18 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from spending_core import DEFAULT_CATEGORIES, Allocation
+from spending_core import Allocation
 from sqlalchemy.orm import Session
 
-from .. import crud, models, schemas
-from ..access import membership, visible_account, visible_transactions
+from .. import categories, crud, models, schemas
+from ..access import Scope, membership, visible_account, visible_transactions
 from ..auth import get_current_user
 from ..database import get_db
 
 router = APIRouter(tags=["transactions"])
-
-
-@router.get("/categories", response_model=list[str])
-def get_categories():
-    return DEFAULT_CATEGORIES
 
 
 @router.get("/transactions", response_model=list[schemas.Transaction])
@@ -51,8 +46,8 @@ def update_transactions(
     for update in updates:
         t = found[update.id]
         if update.category is not None:
-            validate_category(update.category)
-            t.category = update.category
+            t.category = validate_category(db, t.account, update.category)
+            t.category_manual = True
         if update.allocation is not None:
             t.allocation = update.allocation
         elif update.member_id is not None:
@@ -89,9 +84,12 @@ def validate_member(account: models.Account, member_id: int) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"member_id must be one of: {names}")
 
 
-def validate_category(category: str) -> None:
-    if category not in DEFAULT_CATEGORIES:
+def validate_category(db: Session, account: models.Account, category: str) -> str:
+    """The category's name as the account's scope spells it."""
+    found = categories.find_category(db, Scope.of(account), category)
+    if found is None:
+        names = categories.category_names(db, Scope.of(account))
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Invalid category {category!r}; expected one of {DEFAULT_CATEGORIES}",
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid category {category!r}; expected one of {names}"
         )
+    return found.name

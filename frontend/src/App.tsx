@@ -10,6 +10,8 @@ import TransactionForm from "./components/TransactionForm";
 import TransactionTable from "./components/TransactionTable";
 import ImportWizard from "./components/ImportWizard";
 import SettlementCard from "./components/SettlementCard";
+import CategoryPanel from "./components/CategoryPanel";
+import BudgetPanel from "./components/BudgetPanel";
 import "./App.css";
 
 function App() {
@@ -32,11 +34,20 @@ function Home() {
     const [householdId, setHouseholdId] = useState<number | null>(null);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [categories, setCategories] = useState<string[]>([]);
+    // Category names per scope: "me" for your unshared accounts, else a household id.
+    const [categories, setCategories] = useState<Record<string, string[]>>({});
+    const [categoriesVersion, setCategoriesVersion] = useState(0);
     const [error, setError] = useState<string | null>(null);
 
     const fetchAccounts = useCallback(async () => {
         setAccounts(await getAccounts());
+    }, []);
+
+    const fetchCategories = useCallback(async (households: Me["households"]) => {
+        const scopes = [null, ...households.map((h) => h.id)];
+        const lists = await Promise.all(scopes.map((id) => getCategories(id)));
+        setCategories(Object.fromEntries(scopes.map((id, i) => [id ?? "me", lists[i].map((c) => c.name)])));
+        setCategoriesVersion((v) => v + 1);
     }, []);
 
     const fetchTransactions = useCallback(async () => {
@@ -45,21 +56,25 @@ function Home() {
 
     const fetchAll = useCallback(
         async (selectHouseholdId?: number | null) => {
-            setMe(await getMe());
+            const fresh = await getMe();
+            setMe(fresh);
+            await fetchCategories(fresh.households);
             if (selectHouseholdId !== undefined) setHouseholdId(selectHouseholdId);
             await fetchAccounts();
             await fetchTransactions();
         },
-        [fetchAccounts, fetchTransactions],
+        [fetchAccounts, fetchCategories, fetchTransactions],
     );
 
     useEffect(() => {
-        getCategories().then(setCategories);
         getMe()
-            .then(setMe)
+            .then((fresh) => {
+                setMe(fresh);
+                return fetchCategories(fresh.households);
+            })
             .catch((e) => setError(errorMessage(e)));
         fetchAccounts();
-    }, [fetchAccounts]);
+    }, [fetchAccounts, fetchCategories]);
 
     useEffect(() => {
         // A household you were removed from answers 404; fall back to your own view.
@@ -70,6 +85,13 @@ function Home() {
     if (!me) return null;
 
     const myAccounts = accounts.filter((a) => a.owner.user_id === me.id);
+    // An account uses its household's categories when shared, else its owner's.
+    const categoriesFor = (account: Account | undefined) => categories[account?.household_id ?? "me"] ?? [];
+    const viewName = householdId ? me.households.find((h) => h.id === householdId)?.name : undefined;
+    const handleCategoriesChanged = async () => {
+        await fetchCategories(me.households);
+        await fetchTransactions();
+    };
     const handleRename = async () => {
         const name = window.prompt("Your name, as others in a household see it", me.display_name);
         if (name?.trim()) setMe(await updateMe(name.trim()));
@@ -95,7 +117,7 @@ function Home() {
                 </span>
             </header>
 
-            <h1>{householdId ? me.households.find((h) => h.id === householdId)?.name : "Spending"}</h1>
+            <h1>{viewName ?? "Spending"}</h1>
 
             <AccountPanel me={me} accounts={accounts} onChanged={() => fetchAll()} />
 
@@ -103,13 +125,22 @@ function Home() {
 
             <ImportWizard accounts={myAccounts} onImported={() => fetchAll()} />
 
-            <TransactionForm accounts={myAccounts} categories={categories} fetchTransactions={fetchTransactions} />
+            <BudgetPanel householdId={householdId} transactions={transactions} categoriesVersion={categoriesVersion} />
+
+            <CategoryPanel
+                key={householdId ?? "me"}
+                householdId={householdId}
+                scopeName={viewName ?? "your own accounts"}
+                onChanged={handleCategoriesChanged}
+            />
+
+            <TransactionForm accounts={myAccounts} categoriesFor={categoriesFor} fetchTransactions={fetchTransactions} />
 
             <TransactionTable
                 me={me.id}
                 transactions={transactions}
                 accounts={accounts}
-                categories={categories}
+                categoriesFor={categoriesFor}
                 fetchTransactions={fetchTransactions}
             />
 

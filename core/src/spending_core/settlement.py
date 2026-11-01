@@ -103,3 +103,13 @@ def _split_exact(amount: int, weights: Mapping[Hashable, int | Fraction]) -> dic
     for m in order[:leftover]:
         floors[m] += 1
     return {m: sign * v for m, v in floors.items()}
+
+
+def settle_by_category(
+    lines: Iterable[tuple[str, Line]], weights: Mapping[Hashable, int | Fraction]
+) -> dict[str, Settlement]:
+    """`settle` per category, e.g. to compare each member's share of groceries with a budget."""
+    grouped: dict[str, list[Line]] = {}
+    for category, line in lines:
+        grouped.setdefault(category, []).append(line)
+    return {category: settle(group, weights) for category, group in grouped.items()}

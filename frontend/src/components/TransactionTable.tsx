@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { ALLOCATIONS, deleteTransaction, errorMessage, kr, updateTransaction } from "../api";
+import { ALLOCATIONS, createRule, deleteTransaction, errorMessage, kr, suggestPattern, updateTransaction } from "../api";
 import type { Account, Allocation, Transaction, TransactionChanges } from "../api";
 
 interface Props {
     me: number;
     transactions: Transaction[];
     accounts: Account[];
-    categories: string[];
+    categoriesFor: (account: Account | undefined) => string[];
     fetchTransactions: () => Promise<void>;
 }
 
@@ -22,6 +22,10 @@ interface Option {
     label: string;
 }
 
+/** The scope's categories, plus the current one if it isn't among them (e.g. from before the account was shared). */
+const categoryOptions = (names: string[], current: string): Option[] =>
+    (names.includes(current) ? names : [current, ...names]).map((c) => ({ value: c, label: c }));
+
 const Select = ({ value, options, onChange }: { value: string; options: Option[]; onChange: (v: string) => void }) => (
     <select value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((option) => (
@@ -32,10 +36,11 @@ const Select = ({ value, options, onChange }: { value: string; options: Option[]
     </select>
 );
 
-function TransactionTable({ me, transactions, accounts, categories, fetchTransactions }: Props) {
+function TransactionTable({ me, transactions, accounts, categoriesFor, fetchTransactions }: Props) {
     // The row being edited; clicking its Category or Allocation cell starts editing.
     const [draft, setDraft] = useState<Draft | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [message, setMessage] = useState<string | null>(null);
 
     const accountById = new Map(accounts.map((a) => [a.id, a]));
     const personName = (t: Transaction) =>
@@ -45,9 +50,23 @@ function TransactionTable({ me, transactions, accounts, categories, fetchTransac
         setDraft({ id: t.id, allocation: t.allocation, member_id: t.member_id, category: t.category ?? "Other" });
     };
 
+    /** After a correction, offer to do the same for similar transactions from now on. */
+    const offerRule = async (t: Transaction, category: string) => {
+        const pattern = window
+            .prompt(
+                `Always put transactions containing this text in ${category}? Edit the text, or cancel.`,
+                suggestPattern(t.description),
+            )
+            ?.trim();
+        if (!pattern) return;
+        const result = await createRule(accountById.get(t.account_id)?.household_id ?? null, pattern, category);
+        setMessage(`Rule added: "${result.rule.pattern}" → ${category}. ${result.recategorized} other transaction(s) moved.`);
+    };
+
     const handleSave = async (t: Transaction) => {
         if (!draft) return;
         setError(null);
+        setMessage(null);
         try {
             const changes: TransactionChanges = {
                 ...(draft.allocation !== t.allocation && { allocation: draft.allocation }),
@@ -57,6 +76,8 @@ function TransactionTable({ me, transactions, accounts, categories, fetchTransac
             };
             if (Object.keys(changes).length > 0) {
                 await updateTransaction(t.id, changes);
+                setDraft(null);
+                if (changes.category) await offerRule(t, changes.category);
                 await fetchTransactions();
             }
             setDraft(null);
@@ -80,6 +101,7 @@ function TransactionTable({ me, transactions, accounts, categories, fetchTransac
             <h3>Transactions</h3>
             <p>Click a Category or Allocation value to edit it.</p>
             {error && <p role="alert">{error}</p>}
+            {message && <p role="status">{message}</p>}
             <table border={1} style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                     <tr>
@@ -106,7 +128,7 @@ function TransactionTable({ me, transactions, accounts, categories, fetchTransac
                                     {editing ? (
                                         <Select
                                             value={editing.category}
-                                            options={categories.map((c) => ({ value: c, label: c }))}
+                                            options={categoryOptions(categoriesFor(account), editing.category)}
                                             onChange={(category) => setDraft({ ...editing, category })}
                                         />
                                     ) : (

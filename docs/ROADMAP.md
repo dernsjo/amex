@@ -37,12 +37,13 @@ Transaction:
     amount_minor: int, currency           # whole öre, never floats
     allocation: shared | personal | outlay | excluded
     member_id (nullable)                  # whose it is, iff personal
-    category                              # string until Phase 3 makes it a FK
+    category, category_manual             # a category name in the account's scope
     dedupe_hash (unique per account)
 
-Household ──< Category         (null household_id = system default)   (Phase 3)
-Household ──< CategoryRule     (pattern → category)                   (Phase 3)
-Household ──< Budget           (category, month or "recurring")       (Phase 3)
+Scope = a User (their unshared accounts) or a Household (accounts shared into it)
+Scope ──< Category             (name, default_key; defaults copied on first use)
+Scope ──< CategoryRule         (pattern → category name)
+Scope ──< Budget               (category name, month or null = every month)
 Household ──< Settlement       (period, result snapshot, closed_at)   (Phase 4)
 ```
 
@@ -61,6 +62,10 @@ Key decisions:
 - **Members can be added before they sign up.** Adding an unknown email creates a
   pending member (a `User` without `auth_subject`) who can be split with at once;
   their first sign-in with that verified email takes over the row.
+- **Categories follow the account's scope.** A shared account uses the household's
+  categories and rules, an unshared one its owner's; sharing re-runs the rules.
+  Transactions store the category *name* rather than a foreign key, so "Groceries"
+  adds up across your own and your households' accounts in "My view".
 - **Who paid comes from the account owner** (Phase 4 uses this for "who owes whom").
 - **Settlement for N members:** each member's share = their personal spending +
   weight × shared spending. Outlays are reported separately.
@@ -98,18 +103,21 @@ or a mapping guessed from the header names and content.
 
 For each transaction, the first match wins:
 
-1. The household's own rules (e.g. "ICA MAXI → Groceries")
-2. Global default rules (the current keyword lists, moved into data)
+1. The scope's own rules (e.g. "ICA MAXI → Groceries"); the longest matching text wins
+2. Global default rules (the keyword lists in `spending_core.categorize`, versioned with the code)
 3. *(Optional, later)* an LLM fallback for whatever is still unmatched, with results cached
 4. Otherwise "Other"
 
 When a user re-categorizes a transaction, offer *"Always do this for ICA MAXI?"*
-and create a rule if they accept, so categorization improves per household over time.
+and create a rule if they accept, so categorization improves per scope over time.
+New and changed rules apply to existing transactions too, except ones a person
+categorized by hand.
 
 ## 5. Budgets and analysis
 
-- **Budgets:** a default target per category and household, with optional overrides
-  per month. Per-member budgets come later.
+- **Budgets:** a target per category for every month, with optional overrides per
+  month, for a household (against shared spending) or for yourself (against your
+  own share: personal spending plus your weighted part of shared spending).
 - **Analysis endpoints** (plain SQL `GROUP BY`; no data warehouse needed at this scale):
   - `GET /households/{id}/summary?month=`: spending by category against target, by member, settlement preview
   - `GET /households/{id}/trends?from=&to=`: totals per month and category
@@ -174,9 +182,13 @@ and create a rule if they accept, so categorization improves per household over 
       (the generic mapper covers them until then)
 - [ ] Confirm the raw Amex date format with a real export (carried over from Phase 0)
 
-### Phase 3: Categories and budgets
-- Default categories and rules, household rules, learning rules from corrections
-- Budget management UI
+### Phase 3: Categories and budgets (branch `phase-3-categories-budgets`)
+- [x] Categories per scope (you or a household), seeded from the defaults; add, rename, delete
+- [x] Rules per scope ahead of the default keywords; rules apply to existing
+      transactions except hand-picked ones
+- [x] Learning from corrections: "Always put PRESSBYRÅN in Eating out?" after a change
+- [x] Budgets per scope and category, every month or one month; target vs spent per month
+- [x] Budget and category management UI
 
 ### Phase 4: Analysis and settlement
 - Summary and trend endpoints + dashboard

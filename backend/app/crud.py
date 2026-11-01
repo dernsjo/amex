@@ -3,15 +3,14 @@ from datetime import date
 from spending_core import (
     Allocation,
     Line,
-    categorize,
     settle,
     to_minor,
 )
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import models, schemas
-from .access import household_ids_of, visible_account_ids
+from . import categories, models, schemas
+from .access import Scope, household_ids_of, visible_account_ids
 
 
 def person(user: models.User) -> schemas.Person:
@@ -137,7 +136,10 @@ def default_allocation(acc: models.Account) -> tuple[Allocation, int | None]:
     return Allocation.PERSONAL, acc.owner_id
 
 
-def create_transaction(db: Session, acc: models.Account, data: schemas.TransactionCreate) -> models.Transaction:
+def create_transaction(
+    db: Session, acc: models.Account, data: schemas.TransactionCreate, category: str | None
+) -> models.Transaction:
+    """`category` is a validated name, or None to categorize with the account's rules."""
     allocation, member_id = default_allocation(acc)
     if data.allocation is not None:
         allocation, member_id = data.allocation, data.member_id
@@ -155,7 +157,8 @@ def create_transaction(db: Session, acc: models.Account, data: schemas.Transacti
         currency=acc.currency,
         allocation=allocation,
         member_id=member_id if allocation == Allocation.PERSONAL else None,
-        category=data.category or categorize(description),
+        category=category or categories.categorizer(db, Scope.of(acc))(description),
+        category_manual=category is not None,
     )
     db.add(t)
     db.commit()
