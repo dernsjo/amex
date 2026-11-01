@@ -673,6 +673,18 @@ strong {
 .month-label::first-letter {
     text-transform: uppercase;
 }
+/* A month shown as a link that opens the native month picker. */
+.period-pick {
+    position: relative;
+    cursor: pointer;
+}
+.period-pick input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
 
 /* ---------- overview ---------- */
 .total {
@@ -1071,6 +1083,13 @@ strong {
     font-size: var(--step-head);
     line-height: 1.05;
     letter-spacing: -0.03em;
+    font-weight: 600;
+}
+.bill {
+    display: grid;
+    gap: 0.75rem;
+}
+.bill-head {
     font-weight: 600;
 }
 .transfer .amt {
@@ -1566,4 +1585,59 @@ strong {
         transition-duration: 1ms !important;
         animation-duration: 1ms !important;
     }
+}
+
+/* ---------- analysis ---------- */
+.cat-bars {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--share-gap);
+}
+/* One category: name and amount above a bar scaled to the month's largest, its share and change below. */
+.cat-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.35rem 1rem;
+    padding: 0.85rem 1rem;
+    background: var(--surface);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--t-hover) ease;
+}
+.cat-row:hover {
+    background: var(--surface-2);
+}
+.cat-name {
+    font-weight: 600;
+}
+.cat-amount {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+.cat-track {
+    grid-column: 1 / -1;
+    height: 0.5rem;
+    display: block;
+}
+.cat-fill {
+    display: block;
+    height: 100%;
+    min-width: 2px;
+    background: var(--chart-rest);
+    transition: background-color var(--t-hover) ease;
+}
+.cat-row:hover .cat-fill {
+    background: var(--ink);
+}
+.cat-row[aria-pressed="true"] .cat-fill {
+    background: var(--accent);
+}
+.cat-meta {
+    grid-column: 1 / -1;
+    font-size: var(--step-small);
+    color: var(--muted);
 }

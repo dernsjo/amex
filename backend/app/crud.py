@@ -95,6 +95,7 @@ def account(acc: models.Account) -> schemas.Account:
         currency=acc.currency,
         owner=person(acc.owner),
         household_id=acc.household_id,
+        kind=acc.kind,
         import_config=acc.import_config,
         members=[person(u) for u in assignable_people(acc)],
     )

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { createAccount, deleteAccount, errorMessage, updateAccount } from "../api";
-import type { Account, Me } from "../api";
+import type { Account, AccountKind, Me } from "../api";
 import { useDialogs } from "./ui";
 
 interface Props {
@@ -13,10 +13,17 @@ interface Props {
 /** "" in a household select means "not shared". */
 const toHouseholdId = (value: string) => (value ? Number(value) : null);
 
+const KINDS: { value: AccountKind; label: string }[] = [
+    { value: "debit", label: "Bank account" },
+    { value: "credit", label: "Credit card" },
+];
+const kindName = (kind: AccountKind) => KINDS.find((k) => k.value === kind)?.label ?? kind;
+
 const AccountPanel = ({ me, accounts, onChanged }: Props) => {
     const dialogs = useDialogs();
     const [name, setName] = useState("");
     const [shareWith, setShareWith] = useState("");
+    const [kind, setKind] = useState<AccountKind>("debit");
     const [error, setError] = useState<string | null>(null);
 
     const householdName = (id: number | null) => me.households.find((h) => h.id === id)?.name ?? "Not shared";
@@ -34,8 +41,9 @@ const AccountPanel = ({ me, accounts, onChanged }: Props) => {
     const handleCreate = (event: FormEvent) => {
         event.preventDefault();
         run(async () => {
-            await createAccount(name, toHouseholdId(shareWith));
+            await createAccount(name, toHouseholdId(shareWith), kind);
             setName("");
+            setKind("debit");
         });
     };
 
@@ -59,7 +67,10 @@ const AccountPanel = ({ me, accounts, onChanged }: Props) => {
         <section className="block">
             <div className="block-head">
                 <h2>Accounts</h2>
-                <span className="small muted">Sharing an account into a household splits its spending there</span>
+                <span className="small muted">
+                    Sharing an account into a household splits its spending there. A bank account's spending is paid
+                    already; a credit card's is split as a bill when you settle up.
+                </span>
             </div>
             {error && (
                 <p role="alert" className="alert">
@@ -73,6 +84,7 @@ const AccountPanel = ({ me, accounts, onChanged }: Props) => {
                             <tr>
                                 <th>Account</th>
                                 <th>Owner</th>
+                                <th>Type</th>
                                 <th>Sharing</th>
                                 <th />
                             </tr>
@@ -84,6 +96,24 @@ const AccountPanel = ({ me, accounts, onChanged }: Props) => {
                                     <tr key={a.id}>
                                         <td className="cell-desc">{a.name}</td>
                                         <td data-label="Owner">{mine ? "You" : a.owner.display_name}</td>
+                                        <td data-label="Type">
+                                            {mine ? (
+                                                <select
+                                                    className="select select-small"
+                                                    value={a.kind}
+                                                    onChange={(e) => run(() => updateAccount(a.id, { kind: e.target.value as AccountKind }))}
+                                                    aria-label={`Type of ${a.name}`}
+                                                >
+                                                    {KINDS.map((k) => (
+                                                        <option key={k.value} value={k.value}>
+                                                            {k.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                kindName(a.kind)
+                                            )}
+                                        </td>
                                         <td style={{ minWidth: "14rem" }}>
                                             {mine
                                                 ? householdSelect(
@@ -120,6 +150,16 @@ const AccountPanel = ({ me, accounts, onChanged }: Props) => {
                             onChange={(e) => setName(e.target.value)}
                             required
                         />
+                    </label>
+                    <label className="field">
+                        <span>Type</span>
+                        <select className="select" value={kind} onChange={(e) => setKind(e.target.value as AccountKind)}>
+                            {KINDS.map((k) => (
+                                <option key={k.value} value={k.value}>
+                                    {k.label}
+                                </option>
+                            ))}
+                        </select>
                     </label>
                     {me.households.length > 0 && (
                         <label className="field grow">

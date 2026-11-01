@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import imports, models, schemas
 from ..access import owned_account, visible_account
+from ..categories import month_start
 from ..auth import get_current_user
 from ..database import get_db
 
@@ -53,6 +54,19 @@ def list_imports(account: models.Account = Depends(visible_account), db: Session
     )
 
 
+@router.patch("/{import_id}", response_model=schemas.ImportResult)
+def update_import(
+    import_id: int,
+    data: schemas.ImportUpdate,
+    account: models.Account = Depends(owned_account),
+    db: Session = Depends(get_db),
+):
+    """Move an upload to another month; months already closed keep what they stored."""
+    imp = _own_import(db, account, import_id)
+    imports.set_period(db, imp, month_start(data.period))
+    return imp
+
+
 @router.delete("/{import_id}", status_code=status.HTTP_204_NO_CONTENT)
 def undo_import(
     import_id: int,
@@ -60,12 +74,17 @@ def undo_import(
     db: Session = Depends(get_db),
 ):
     """Delete an import together with its transactions."""
-    imp = db.get(models.Import, import_id)
-    if imp is None or imp.account_id != account.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Import not found")
+    imp = _own_import(db, account, import_id)
     db.delete(imp)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _own_import(db: Session, account: models.Account, import_id: int) -> models.Import:
+    imp = db.get(models.Import, import_id)
+    if imp is None or imp.account_id != account.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Import not found")
+    return imp
 
 
 async def _prepare(db: Session, account: models.Account, file: UploadFile, config: str | None) -> imports.Prepared:

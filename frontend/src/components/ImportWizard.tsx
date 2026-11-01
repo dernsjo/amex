@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { confirmImport, dayName, errorMessage, getImports, kr, previewImport, undoImport } from "../api";
+import {
+    confirmImport,
+    dayName,
+    errorMessage,
+    getImports,
+    kr,
+    monthName,
+    previewImport,
+    undoImport,
+    updateImport,
+} from "../api";
 import type { Account, ImportConfig, ImportPreview, ImportResult } from "../api";
 import MappingForm from "./MappingForm";
 import type { MappingDraft } from "./MappingForm";
@@ -138,6 +148,16 @@ const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
         if (!ok) return;
         try {
             await undoImport(selected, imp.id);
+            await Promise.all([fetchHistory(), onImported()]);
+        } catch (e) {
+            setMessage(errorMessage(e));
+        }
+    };
+
+    const handlePeriod = async (imp: ImportResult, period: string) => {
+        if (selected === null || period === imp.period) return;
+        try {
+            await updateImport(selected, imp.id, period);
             await Promise.all([fetchHistory(), onImported()]);
         } catch (e) {
             setMessage(errorMessage(e));
@@ -287,6 +307,7 @@ const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
                             {preview.duplicate_count > 0 && (
                                 <span className="muted"> · {preview.duplicate_count} already imported, skipped</span>
                             )}
+                            {preview.period && <span className="muted"> · counts toward {monthName(preview.period)}</span>}
                         </p>
                         <div className="edit-actions">
                             <button className="btn" onClick={reset} disabled={busy}>
@@ -358,6 +379,20 @@ const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
                                         : ""}
                                     {imp.transaction_count} transactions
                                     {imp.duplicate_count > 0 && `, ${imp.duplicate_count} skipped`}
+                                    {imp.period && (
+                                        <>
+                                            {" · counts toward "}
+                                            <label className="link period-pick">
+                                                {monthName(imp.period)}
+                                                <input
+                                                    type="month"
+                                                    value={imp.period}
+                                                    onChange={(e) => e.target.value && handlePeriod(imp, e.target.value)}
+                                                    aria-label={`Month ${imp.filename} counts toward`}
+                                                />
+                                            </label>
+                                        </>
+                                    )}
                                 </span>
                             </li>
                         ))}

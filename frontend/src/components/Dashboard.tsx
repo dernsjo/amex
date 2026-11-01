@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { addMonths, dayName, errorMessage, getSettlement, getSummary, getTrends, kr, monthName, monthShort } from "../api";
+import { addMonths, dayName, errorMessage, getSettlement, getSummary, getTrends, kr, monthName } from "../api";
 import type { Settlement, Summary, Transaction, Trends } from "../api";
 import type { View } from "../App";
-import { MonthStepper, ShareBar } from "./ui";
+import { MonthStepper, ShareBar, TREND_MONTHS, TrendBars } from "./ui";
 
 interface Props {
     householdId: number | null; // null: your own share of everything
@@ -12,41 +12,10 @@ interface Props {
     transactions: Transaction[]; // only to know when spending changed
     categoriesVersion: number; // bumped when categories change
     hasAccounts: boolean;
+    latestMonth: string | null; // the latest month anything counts toward
     onGo: (view: View) => void;
 }
 
-const TREND_MONTHS = 12;
-
-/** Twelve months of spending as bars; the chosen month in the accent. Choosing a bar moves the whole view. */
-const TrendBars = ({ trends, month, onSelect }: { trends: Trends; month: string; onSelect: (m: string) => void }) => {
-    const max = Math.max(1, ...trends.months.map((p) => p.spent_minor));
-    return (
-        <div className="trend">
-            <div className="trend-bars" role="group" aria-label="Spending per month">
-                {trends.months.map((p, i) => {
-                    const h = `${(Math.max(0, p.spent_minor) / max) * 100}%`;
-                    return (
-                        <button
-                            key={p.month}
-                            type="button"
-                            className={`trend-bar${i < 2 ? " edge-start" : i >= trends.months.length - 2 ? " edge-end" : ""}`}
-                            aria-pressed={p.month === month}
-                            aria-label={`${monthName(p.month)}: ${kr(p.spent_minor)}`}
-                            onClick={() => onSelect(p.month)}
-                            style={{ ["--i" as string]: i, ["--h" as string]: `calc((14rem - 1.65rem) * ${Math.max(0, p.spent_minor) / max})` }}
-                        >
-                            <span className="tip">
-                                {monthShort(p.month)} {kr(p.spent_minor)}
-                            </span>
-                            <span className="bar" style={{ height: `calc(${h} - 1.65rem)` }} />
-                            <span className="m">{monthShort(p.month).slice(0, 1)}</span>
-                        </button>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
 
 /** The household's verdict for the month, as one sentence on a field. */
 const SettleTile = ({ householdId, month, onGo }: { householdId: number; month: string; onGo: (v: View) => void }) => {
@@ -58,10 +27,19 @@ const SettleTile = ({ householdId, month, onGo }: { householdId: number; month: 
     }, [householdId, month]);
     if (!result) return null;
     const [first] = result.transfers;
+    // Card bills first: nobody has paid them yet, so what each pays is the headline.
+    const [bill] = result.bills ?? [];
+    const billShares = bill?.shares.filter((s) => s.amount_minor !== 0) ?? [];
+    const more = (result.bills?.length ?? 0) - (bill ? 1 : 0) + result.transfers.length - (bill ? 0 : first ? 1 : 0);
     return (
         <section className="tile tile-2 rise" style={{ ["--i" as string]: 2 }} aria-labelledby="settle-tile">
             <p id="settle-tile" className="head">
-                {first ? (
+                {bill ? (
+                    <>
+                        {bill.account_name} bill:{" "}
+                        {billShares.map((s) => `${s.display_name} pays ${kr(s.amount_minor)}`).join(", ")}
+                    </>
+                ) : first ? (
                     <>
                         {first.debtor.display_name} pays {first.creditor.display_name} {kr(first.amount_minor)}
                     </>
@@ -70,7 +48,7 @@ const SettleTile = ({ householdId, month, onGo }: { householdId: number; month: 
                 )}
             </p>
             <p>
-                {result.transfers.length > 1 && `And ${result.transfers.length - 1} more transfer(s). `}
+                {more > 0 && `And ${more} more to settle. `}
                 Shared spending in {monthName(month)}: {kr(result.shared_minor)}.
                 {result.closed_at ? " This month is closed." : " Nothing is final until you close the month."}
             </p>
@@ -84,7 +62,7 @@ const SettleTile = ({ householdId, month, onGo }: { householdId: number; month: 
 };
 
 /** A month at a glance: spending against target, the trend, and the largest spending. */
-const Dashboard = ({ householdId, householdName, month, onMonthChange, transactions, categoriesVersion, hasAccounts, onGo }: Props) => {
+const Dashboard = ({ householdId, householdName, month, onMonthChange, transactions, categoriesVersion, hasAccounts, latestMonth, onGo }: Props) => {
     const [summary, setSummary] = useState<Summary | null>(null);
     const [trends, setTrends] = useState<Trends | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -140,6 +118,14 @@ const Dashboard = ({ householdId, householdName, month, onMonthChange, transacti
                         <p className="lead">
                             {whose} in {monthName(month)}
                         </p>
+                        {spent === 0 && summary.largest.length === 0 && latestMonth && latestMonth !== month && (
+                            <p>
+                                Nothing counts toward {monthName(month)} yet.{" "}
+                                <button className="link" onClick={() => onMonthChange(latestMonth)}>
+                                    See {monthName(latestMonth)}
+                                </button>
+                            </p>
+                        )}
                     </div>
                     <div className="total-meta rise" style={{ ["--i" as string]: 1 }}>
                         {target > 0 ? (

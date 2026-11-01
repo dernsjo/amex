@@ -6,6 +6,7 @@
 import type { AxiosAdapter, InternalAxiosRequestConfig } from "axios";
 import type {
     Account,
+    Analysis,
     BudgetMonth,
     Category,
     CategoryRule,
@@ -42,9 +43,9 @@ const household: Household = {
 };
 
 const accounts: Account[] = [
-    { id: 1, name: "Amex", currency: "SEK", owner: alex, household_id: 10, import_config: { importer: "amex_se", mapping: null }, members: [alex, sam] },
-    { id: 2, name: "Joint card", currency: "SEK", owner: sam, household_id: 10, import_config: null, members: [alex, sam] },
-    { id: 3, name: "Savings", currency: "SEK", owner: alex, household_id: null, import_config: null, members: [alex] },
+    { id: 1, name: "Amex", currency: "SEK", owner: alex, household_id: 10, kind: "credit", import_config: { importer: "amex_se", mapping: null }, members: [alex, sam] },
+    { id: 2, name: "Joint card", currency: "SEK", owner: sam, household_id: 10, kind: "debit", import_config: null, members: [alex, sam] },
+    { id: 3, name: "Savings", currency: "SEK", owner: alex, household_id: null, kind: "debit", import_config: null, members: [alex] },
 ];
 
 const rows: [number, string, number, string, Transaction["allocation"], number, number | null][] = [
@@ -71,6 +72,7 @@ const transactions: Transaction[] = rows.map(([d, description, amount_minor, cat
     account_id,
     import_id: 1,
     booked_on: day(d),
+    period: month,
     description,
     amount_minor,
     currency: "SEK",
@@ -114,20 +116,64 @@ const summary: Summary = {
 
 const trend = [9_812, 11_240, 10_455, 12_980, 9_604, 10_877, 14_210, 11_096, 10_330, 12_118, 11_904, 10_618];
 const trends: Trends = {
-    months: trend.map((kr, i) => ({ month: addMonths(month, i - 11), spent_minor: kr * 100, by_category: {} })),
+    // Each month's total spread over the categories in this month's proportions, a little varied.
+    months: trend.map((kr, i) => ({
+        month: addMonths(month, i - 11),
+        spent_minor: kr * 100,
+        by_category: Object.fromEntries(
+            budget.lines
+                .filter((l) => l.spent_minor > 0)
+                .map((l, j) => [l.category, Math.round(((kr * 100 * l.spent_minor) / budget.spent_minor) * (0.8 + ((i * 7 + j * 3) % 5) / 10))]),
+        ),
+    })),
+};
+
+const previousShare = [0.92, 1.31, 0.74, 1.05, 1.0, 0];
+const analysis: Analysis = {
+    month,
+    spent_minor: budget.spent_minor,
+    previous_spent_minor: 11_904_10,
+    categories: budget.lines
+        .map((l, i) => ({ category: l.category, spent_minor: l.spent_minor, previous_minor: Math.round(l.spent_minor * (previousShare[i] ?? 1)) }))
+        .filter((c) => c.spent_minor || c.previous_minor)
+        .sort((a, b) => b.spent_minor - a.spent_minor),
+    // Split 3:2, as the household's weights say; Sam's health purchase is personal.
+    members: [alex, sam].map((p, k) => {
+        const by_category: Record<string, number> = Object.fromEntries(
+            budget.lines
+                .filter((l) => l.spent_minor > 0)
+                .map((l): [string, number] => [l.category, l.category === "Health" ? (k === 1 ? l.spent_minor : 0) : Math.round((l.spent_minor * (k === 0 ? 3 : 2)) / 5)])
+                .filter(([, v]) => v),
+        );
+        return { ...p, by_category, amount_minor: Object.values(by_category).reduce((a, b) => a + b, 0) };
+    }),
 };
 
 const settlement: Settlement = {
     household_id: 10,
     month,
+    // The Amex (a credit card) is split as a bill; Sam's joint card (a bank card) is paid already.
     per_member: [
-        { ...alex, amount_minor: 7_182_00, paid_minor: 9_838_40, balance_minor: 2_656_40 },
-        { ...sam, amount_minor: 4_612_15, paid_minor: 1_955_75, balance_minor: -2_656_40 },
+        { ...alex, amount_minor: 4_432_87, paid_minor: 0, balance_minor: -977_87, bill_minor: 4_950_00 },
+        { ...sam, amount_minor: 4_427_87, paid_minor: 1_955_74, balance_minor: 977_87, bill_minor: 3_450_00 },
     ],
-    transfers: [{ debtor: sam, creditor: alex, amount_minor: 2_656_40 }],
+    transfers: [{ debtor: alex, creditor: sam, amount_minor: 977_87 }],
+    bills: [
+        {
+            account_id: 1,
+            account_name: "Amex",
+            owner: alex,
+            total_minor: 8_400_00,
+            outlay_minor: 1_495_00,
+            shares: [
+                { ...alex, amount_minor: 4_950_00 },
+                { ...sam, amount_minor: 3_450_00 },
+            ],
+        },
+    ],
     outlay_minor: 1_495_00,
-    shared_minor: 9_314_75,
-    total_minor: 11_794_15,
+    shared_minor: 8_850_74,
+    total_minor: 10_355_74,
     closed_at: null,
 };
 
@@ -135,6 +181,7 @@ const history: Settlement[] = [1, 2].map((back, i) => ({
     ...settlement,
     month: addMonths(month, -back),
     transfers: [{ debtor: sam, creditor: alex, amount_minor: [1_904_00, 712_50][i] }],
+    bills: [],
     total_minor: [11_904_10, 12_118_00][i],
     closed_at: `${addMonths(month, -back + 1)}-02T09:00:00`,
 }));
@@ -147,6 +194,7 @@ const imports: ImportResult[] = [
         filename: "activity.csv",
         period_start: day(1),
         period_end: day(28),
+        period: day(28).slice(0, 7),
         transaction_count: 112,
         duplicate_count: 4,
         created_at: day(28),
@@ -163,6 +211,7 @@ const routes: [string, RegExp, unknown][] = [
     ["get", /^\/budgets$/, budget],
     ["get", /^\/summary$/, summary],
     ["get", /^\/trends$/, trends],
+    ["get", /^\/analysis$/, analysis],
     ["get", /^\/households\/\d+$/, household],
     ["get", /^\/households\/\d+\/settlement$/, ((c) => history.find((h) => h.month === c.params?.month) ?? { ...settlement, month: c.params?.month }) as Handler],
     ["get", /^\/households\/\d+\/settlements$/, history],

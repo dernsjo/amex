@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from tests.test_api import AMEX_CSV, upload
+from tests.test_api import AMEX_CSV, add, upload
 
 BANK_CSV = (
     "Kontoutdrag;;;\n"
@@ -152,3 +152,46 @@ def test_cannot_undo_another_accounts_import_through_own_account(axel, account):
     other = axel.post("/accounts", json={"name": "Other"}).json()["id"]
     imp = confirm(axel, other, AMEX_CSV).json()
     assert axel.delete(f"/accounts/{account}/imports/{imp['id']}").status_code == 404
+
+
+# Statement periods: an upload counts toward the month it ends in
+
+STATEMENT_CSV = (
+    "Bokföringsdag;Text;Belopp;Saldo\n"
+    "2025-09-27;ICA NARA;-100,00;0\n"
+    "2025-10-10;SL;-200,00;0\n"
+    "2025-10-27;COOP;-400,00;0\n"
+).encode("cp1252")
+
+
+def test_an_upload_counts_toward_the_month_it_ends_in(couple, axel, ebba):
+    household_id, account_id = couple
+    assert preview(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()["period"] == "2025-10"
+    imp = confirm(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()
+    assert imp["period"] == "2025-10"
+    september = {"month": "2025-09"}
+    october = {"month": "2025-10"}
+
+    # 27 September is on October's statement, so it counts toward October.
+    assert ebba.get(f"/households/{household_id}/settlement", params=september).json()["shared_minor"] == 0
+    assert ebba.get(f"/households/{household_id}/settlement", params=october).json()["shared_minor"] == 70000
+    summary = ebba.get("/summary", params=october | {"household_id": household_id}).json()
+    assert summary["spent_minor"] == 70000
+
+    # A transaction added by hand counts toward the month it was booked in.
+    add(axel, account_id, 50, "Cash", booked_on="2025-09-28")
+    assert ebba.get(f"/households/{household_id}/settlement", params=september).json()["shared_minor"] == 5000
+
+
+def test_an_upload_can_move_to_another_month(couple, axel, ebba):
+    household_id, account_id = couple
+    imp = confirm(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()
+    url = f"/accounts/{account_id}/imports/{imp['id']}"
+
+    r = axel.patch(url, json={"period": "2025-11"})
+    assert r.status_code == 200 and r.json()["period"] == "2025-11"
+    settlement = ebba.get(f"/households/{household_id}/settlement", params={"month": "2025-11"}).json()
+    assert settlement["shared_minor"] == 70000
+
+    assert axel.patch(url, json={"period": "2025-13"}).status_code == 422
+    assert ebba.patch(url, json={"period": "2025-10"}).status_code in (403, 404)  # not her account

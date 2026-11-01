@@ -2,8 +2,13 @@
 
 Both steps receive the file; nothing is stored between them, and the raw file
 is never kept (only its hash, to recognize a re-upload).
+
+An upload is treated as one statement: all its transactions count toward one
+month, the month its last transaction was booked in (27 Sep – 27 Oct is October).
+It can be moved to another month afterwards.
 """
 
+import datetime as dt
 import hashlib
 from dataclasses import dataclass
 
@@ -18,7 +23,7 @@ from spending_core import (
     read_table,
     resolve,
 )
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from . import categories, crud, models, schemas
@@ -40,6 +45,21 @@ class Prepared:
     hashes: list[str]
     duplicates: set[str]
     file_hash: str
+
+
+def statement_period(parsed: list[ParsedTransaction]) -> dt.date | None:
+    """The month an upload counts toward: the month its statement ends in."""
+    return max(t.booked_on for t in parsed).replace(day=1) if parsed else None
+
+
+def set_period(db: Session, imp: models.Import, period: dt.date) -> None:
+    """Move an upload, with all its transactions, to another month."""
+    imp.period = period
+    db.execute(
+        update(models.Transaction).where(models.Transaction.import_id == imp.id).values(period=period)
+    )
+    db.commit()
+    db.refresh(imp)
 
 
 def to_core_config(config: schemas.ImportConfig) -> ImportConfig:
@@ -110,6 +130,7 @@ def prepare(
         new_count=len(rows) - duplicate_count,
         duplicate_count=duplicate_count,
         already_imported_at=previous,
+        period=p.strftime("%Y-%m") if (p := statement_period(parsed)) else None,
         error=error,
     )
     return Prepared(preview, config, parsed, hashes, duplicates, file_hash)
@@ -129,6 +150,7 @@ def confirm(db: Session, acc: models.Account, user: models.User, prepared: Prepa
         period_start=min((t.booked_on for t in parsed), default=None),
         period_end=max((t.booked_on for t in parsed), default=None),
     )
+    imp.period = statement_period(parsed)
     db.add(imp)
     db.flush()
 
@@ -149,6 +171,7 @@ def _new_transactions(acc: models.Account, imp: models.Import, prepared: Prepare
             account_id=acc.id,
             import_id=imp.id,
             booked_on=t.booked_on,
+            period=imp.period,
             description_raw=t.description,
             description_clean=t.description,
             amount_minor=t.amount_minor,

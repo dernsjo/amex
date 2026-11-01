@@ -151,3 +151,73 @@ def test_cannot_close_a_month_that_does_not_add_up(couple, axel, ebba):
     ebba.delete(f"/households/{household_id}/members/{ebba_id}")
     assert axel.post(f"/households/{household_id}/settlements", json={"month": JULY}).status_code == 409
     assert axel.get(f"/households/{household_id}/settlements").json() == []
+
+
+# Credit cards: nobody has paid the statement yet, so it's split as a bill
+
+
+def test_credit_card_spending_is_a_bill_not_a_debt(couple, axel, ebba):
+    household_id, account_id = couple
+    r = axel.patch(f"/accounts/{account_id}", json={"kind": "credit"})
+    assert r.status_code == 200 and r.json()["kind"] == "credit"
+    add(axel, account_id, 1000, "ICA MAXI", booked_on=on(JULY))  # shared: 500 each
+    add(axel, account_id, 200, "Shoes", booked_on=on(JULY), member_id=user_id(ebba))
+    add(axel, account_id, 50, "Dinner for a friend", booked_on=on(JULY), allocation="outlay")
+
+    result = settlement(ebba, household_id, JULY).json()
+    assert result["transfers"] == []  # nobody has paid anything yet
+    [bill] = result["bills"]
+    assert (bill["account_name"], bill["total_minor"], bill["outlay_minor"]) == ("Amex", 125000, 5000)
+    shares = {s["display_name"]: s["amount_minor"] for s in bill["shares"]}
+    assert shares == {"axel": 55000, "ebba": 70000}  # Axel also pays the outlay he fronted
+    by_name = {m["display_name"]: m for m in result["per_member"]}
+    assert (by_name["ebba"]["amount_minor"], by_name["ebba"]["paid_minor"], by_name["ebba"]["bill_minor"]) == (70000, 0, 70000)
+    assert by_name["ebba"]["balance_minor"] == 0
+
+
+def test_bank_and_card_spending_settle_separately(couple, axel, ebba):
+    household_id, card = couple
+    axel.patch(f"/accounts/{card}", json={"kind": "credit"})
+    bank = ebba.post("/accounts", json={"name": "Ebba's bank", "household_id": household_id}).json()
+    assert bank["kind"] == "debit"
+    add(axel, card, 1000, "ICA MAXI", booked_on=on(JULY))
+    add(ebba, bank["id"], 400, "Electricity", booked_on=on(JULY))  # Ebba paid it: Axel owes her 200
+
+    result = settlement(axel, household_id, JULY).json()
+    assert [(t["debtor"]["display_name"], t["creditor"]["display_name"], t["amount_minor"]) for t in result["transfers"]] == [
+        ("axel", "ebba", 20000)
+    ]
+    assert {s["display_name"]: s["amount_minor"] for s in result["bills"][0]["shares"]} == {"axel": 50000, "ebba": 50000}
+
+
+# Analysis: per category against the month before, and per member
+
+
+def test_analysis_per_category_and_member(couple, axel, ebba):
+    household_id, account_id = couple
+    add(axel, account_id, 1000, "ICA MAXI", booked_on=on(JULY))  # Groceries, shared
+    add(axel, account_id, 300, "SL", booked_on=on(JULY))
+    add(axel, account_id, 200, "Shoes", booked_on=on(JULY), member_id=user_id(ebba), category="Shopping")
+    add(axel, account_id, 400, "ICA MAXI", booked_on=on(JUNE))
+    add(axel, account_id, 90, "Flight", booked_on=on(JUNE), category="Travel")
+
+    r = ebba.get("/analysis", params={"month": JULY, "household_id": household_id})
+    assert r.status_code == 200, r.text
+    result = r.json()
+    assert (result["spent_minor"], result["previous_spent_minor"]) == (130000, 49000)
+    rows = [(c["category"], c["spent_minor"], c["previous_minor"]) for c in result["categories"]]
+    assert rows[0] == ("Groceries", 100000, 40000)
+    assert ("Travel", 0, 9000) in rows  # gone this month, still compared
+    members = {m["display_name"]: m for m in result["members"]}
+    assert members["ebba"]["amount_minor"] == 65000 + 20000  # half the shared, plus her shoes
+    assert members["ebba"]["by_category"]["Shopping"] == 20000
+    assert members["axel"]["by_category"]["Groceries"] == 50000
+
+    mine = axel.get("/analysis", params={"month": JULY}).json()
+    assert mine["spent_minor"] == 65000 and mine["members"] == []
+
+
+def test_transactions_say_which_month_they_count_toward(couple, axel):
+    _, account_id = couple
+    t = add(axel, account_id, 10, booked_on="2025-07-31")
+    assert t["period"] == "2025-07"
