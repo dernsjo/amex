@@ -95,6 +95,7 @@ def account(acc: models.Account) -> schemas.Account:
         currency=acc.currency,
         owner=person(acc.owner),
         household_id=acc.household_id,
+        kind=acc.kind,
         import_config=acc.import_config,
         members=[person(u) for u in assignable_people(acc)],
     )
@@ -113,8 +114,11 @@ def get_transactions(
     household_id: int | None = None,
     skip: int = 0,
     limit: int | None = None,
+    import_id: int | None = None,
 ) -> list[models.Transaction]:
     query = select(models.Transaction).where(models.Transaction.account_id.in_(visible_account_ids(user)))
+    if import_id is not None:
+        query = query.where(models.Transaction.import_id == import_id)
     if account_id is not None:
         query = query.where(models.Transaction.account_id == account_id)
     if household_id is not None:
@@ -154,6 +158,7 @@ def create_transaction(
         member_id=member_id if allocation == Allocation.PERSONAL else None,
         category=category or categories.categorizer(db, Scope.of(acc))(description),
         category_manual=category is not None,
+        reviewed=True,  # added by hand, so someone has already said whose it is
     )
     db.add(t)
     db.commit()

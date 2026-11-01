@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { confirmImport, dayName, errorMessage, getImports, kr, previewImport, undoImport } from "../api";
+import {
+    confirmImport,
+    dayName,
+    errorMessage,
+    getImports,
+    kr,
+    monthName,
+    previewImport,
+    undoImport,
+    updateImport,
+} from "../api";
 import type { Account, ImportConfig, ImportPreview, ImportResult } from "../api";
 import MappingForm from "./MappingForm";
 import type { MappingDraft } from "./MappingForm";
@@ -9,6 +19,7 @@ import { Segmented, useDialogs } from "./ui";
 interface Props {
     accounts: Account[]; // the user's own accounts
     onImported: () => Promise<void>;
+    onReview: (accountId: number, importId: number) => void; // go through a statement's transactions
     onAddAccount: () => void;
 }
 
@@ -26,7 +37,7 @@ const PREVIEW_ROWS = 50;
 const isComplete = (m: MappingDraft) => Boolean(m.date_column && m.description_column && m.amount_column);
 
 /** Upload → preview (and fix the column mapping if needed) → confirm. */
-const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
+const ImportWizard = ({ accounts, onImported, onReview, onAddAccount }: Props) => {
     const dialogs = useDialogs();
     const [accountId, setAccountId] = useState<number | null>(null);
     const [file, setFile] = useState<File | null>(null);
@@ -125,6 +136,8 @@ const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
             setMessage(`Imported ${result.transaction_count} transactions${skipped}`);
             reset();
             await Promise.all([fetchHistory(), onImported()]);
+            // Next: go through it and say whose each purchase is.
+            if (selected !== null && result.transaction_count > 0) onReview(selected, result.id);
         } catch (e) {
             setMessage(`Import failed: ${errorMessage(e)}`);
         } finally {
@@ -138,6 +151,16 @@ const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
         if (!ok) return;
         try {
             await undoImport(selected, imp.id);
+            await Promise.all([fetchHistory(), onImported()]);
+        } catch (e) {
+            setMessage(errorMessage(e));
+        }
+    };
+
+    const handlePeriod = async (imp: ImportResult, period: string) => {
+        if (selected === null || period === imp.period) return;
+        try {
+            await updateImport(selected, imp.id, period);
             await Promise.all([fetchHistory(), onImported()]);
         } catch (e) {
             setMessage(errorMessage(e));
@@ -287,6 +310,7 @@ const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
                             {preview.duplicate_count > 0 && (
                                 <span className="muted"> · {preview.duplicate_count} already imported, skipped</span>
                             )}
+                            {preview.period && <span className="muted"> · counts toward {monthName(preview.period)}</span>}
                         </p>
                         <div className="edit-actions">
                             <button className="btn" onClick={reset} disabled={busy}>
@@ -349,15 +373,36 @@ const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
                         {history.map((imp) => (
                             <li key={imp.id} className="list-row">
                                 <span className="desc">{imp.filename}</span>
-                                <button className="link small" onClick={() => handleUndo(imp)}>
-                                    Undo
-                                </button>
+                                <span className="row" style={{ gap: "1rem" }}>
+                                    {selected !== null && imp.transaction_count > 0 && (
+                                        <button className="link small" onClick={() => onReview(selected, imp.id)}>
+                                            Go through it
+                                        </button>
+                                    )}
+                                    <button className="link small" onClick={() => handleUndo(imp)}>
+                                        Undo
+                                    </button>
+                                </span>
                                 <span className="sub">
                                     {imp.period_start && imp.period_end
                                         ? `${dayName(imp.period_start)} – ${dayName(imp.period_end)} · `
                                         : ""}
                                     {imp.transaction_count} transactions
                                     {imp.duplicate_count > 0 && `, ${imp.duplicate_count} skipped`}
+                                    {imp.period && (
+                                        <>
+                                            {" · counts toward "}
+                                            <label className="link period-pick">
+                                                {monthName(imp.period)}
+                                                <input
+                                                    type="month"
+                                                    value={imp.period}
+                                                    onChange={(e) => e.target.value && handlePeriod(imp, e.target.value)}
+                                                    aria-label={`Month ${imp.filename} counts toward`}
+                                                />
+                                            </label>
+                                        </>
+                                    )}
                                 </span>
                             </li>
                         ))}

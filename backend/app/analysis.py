@@ -7,6 +7,9 @@ household's shared spending, as in the settlement.
 
 A household's settlement says who is responsible for what in a month, and who
 pays whom to even out. Closing a month stores it, so later edits don't change it.
+
+A "month" is the period a transaction counts toward (Transaction.period): an
+upload is one statement, so 27 Sep – 27 Oct is October.
 """
 
 import datetime as dt
@@ -46,7 +49,8 @@ def previous_month(month: dt.date) -> dt.date:
 
 
 def _between(start: dt.date, end: dt.date) -> ColumnElement[bool]:
-    return (models.Transaction.booked_on >= start) & (models.Transaction.booked_on < end)
+    """Transactions counting toward the months from `start` up to (not including) `end`."""
+    return (models.Transaction.period >= start) & (models.Transaction.period < end)
 
 
 # Spending
@@ -77,7 +81,7 @@ def _settle_by_month(db: Session, household_id: int, start: dt.date, end: dt.dat
     weights = _weights(db, household_id)
     return settle_by_category(
         [
-            ((t.booked_on.replace(day=1), t.category or FALLBACK_CATEGORY), Line(t.amount_minor, t.allocation, t.member_id))
+            ((t.period, t.category or FALLBACK_CATEGORY), Line(t.amount_minor, t.allocation, t.member_id))
             for t in _household_transactions(db, household_id, start, end)
             # Personal spending of someone who has left the household isn't anyone's here.
             if t.allocation != Allocation.PERSONAL or t.member_id in weights
@@ -94,7 +98,7 @@ def _own_share(db: Session, user: models.User, start: dt.date, end: dt.date) -> 
         )
     ):
         if t.allocation == Allocation.SHARED or (t.allocation == Allocation.PERSONAL and t.member_id == user.id):
-            spent[t.booked_on.replace(day=1), t.category or FALLBACK_CATEGORY] += t.amount_minor
+            spent[t.period, t.category or FALLBACK_CATEGORY] += t.amount_minor
     for household_id in db.scalars(household_ids_of(user)):
         for key, result in _settle_by_month(db, household_id, start, end).items():
             spent[key] += result.per_member.get(user.id, 0)
@@ -186,6 +190,48 @@ def trends(db: Session, scope: Scope, viewer: models.User, first: dt.date, last:
     )
 
 
+def breakdown(db: Session, scope: Scope, viewer: models.User, month: dt.date) -> schemas.Analysis:
+    """Where a month's money went, per category against the month before, and for a household, per member."""
+    before = previous_month(month)
+    now = _per_category(spent(db, scope, viewer, month, next_month(month)))
+    then = _per_category(spent(db, scope, viewer, before, month))
+    rows = [
+        schemas.AnalysisCategory(category=c, spent_minor=now.get(c, 0), previous_minor=then.get(c, 0))
+        for c in set(now) | set(then)
+    ]
+    rows.sort(key=lambda r: (-r.spent_minor, -r.previous_minor, r.category))
+    members = []
+    if scope.household_id is not None:
+        by_member: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        for (_, category), result in _settle_by_month(db, scope.household_id, month, next_month(month)).items():
+            for user_id, amount in result.per_member.items():
+                if amount:
+                    by_member[user_id][category] += amount
+        household = db.get(models.Household, scope.household_id)
+        members = [
+            schemas.AnalysisMember(
+                **person(m.user).model_dump(),
+                amount_minor=sum(by_member[m.user_id].values()),
+                by_category=dict(by_member[m.user_id]),
+            )
+            for m in household.memberships
+        ]
+    return schemas.Analysis(
+        month=month_label(month),
+        spent_minor=sum(now.values()),
+        previous_spent_minor=sum(then.values()),
+        categories=rows,
+        members=members,
+    )
+
+
+def _per_category(spent_by_key: dict[Key, int]) -> dict[str, int]:
+    totals: dict[str, int] = defaultdict(int)
+    for (_, category), amount in spent_by_key.items():
+        totals[category] += amount
+    return {c: a for c, a in totals.items() if a}
+
+
 # Settlement
 
 
@@ -202,19 +248,42 @@ def settlement(db: Session, hh: models.Household, month: dt.date) -> schemas.Set
 
 
 def _calculate(db: Session, hh: models.Household, month: dt.date) -> schemas.Settlement:
+    """Bank-account spending is already paid by the account's owner, so balances become transfers.
+    Credit card spending isn't paid by anyone yet, so each card's statement is split into what
+    each member pays toward its bill."""
     members = {m.user_id: m for m in hh.memberships}
-    lines = []
+    weights = _weights(db, hh.id)
+    lines: list[Line] = []  # everything, for what each member is responsible for
+    paid_lines: list[Line] = []  # bank-account spending: paid already, by the account's owner
+    bill_lines: dict[int, list[Line]] = defaultdict(list)  # credit card spending, per card
+    cards: dict[int, models.Account] = {}
+    unchecked: dict[tuple[int, int | None], int] = defaultdict(int)
     for t in _household_transactions(db, hh.id, month, next_month(month)):
+        if not t.reviewed:
+            unchecked[t.account_id, t.import_id] += 1
         if t.allocation == Allocation.PERSONAL and t.member_id not in members:
             raise SettlementError(
                 f"Transaction {t.id} ({t.description_clean}) is personal for someone who isn't a member"
             )
-        # Who paid is whoever owns the account; leaving a household unshares your accounts, so it's a member.
-        lines.append(Line(t.amount_minor, t.allocation, t.member_id, payer=t.account.owner_id))
+        if t.account.kind == models.AccountKind.CREDIT:
+            line = Line(t.amount_minor, t.allocation, t.member_id)  # nobody has paid it yet
+            bill_lines[t.account_id].append(line)
+            cards[t.account_id] = t.account
+        else:
+            # Who paid is whoever owns the account; leaving a household unshares your accounts, so it's a member.
+            line = Line(t.amount_minor, t.allocation, t.member_id, payer=t.account.owner_id)
+            paid_lines.append(line)
+        lines.append(line)
 
-    result = settle(lines, _weights(db, hh.id))
+    result = settle(lines, weights)
+    balances = settle(paid_lines, weights).balances
     people = {uid: person(m.user) for uid, m in members.items()}
-    balances = result.balances
+    bills = [_bill(cards[account_id], card_lines, weights, people) for account_id, card_lines in sorted(bill_lines.items())]
+    bills = [b for b in bills if b.total_minor]
+    on_bills = defaultdict(int)
+    for bill in bills:
+        for share in bill.shares:
+            on_bills[share.user_id] += share.amount_minor
     return schemas.Settlement(
         household_id=hh.id,
         month=month_label(month),
@@ -224,6 +293,7 @@ def _calculate(db: Session, hh: models.Household, month: dt.date) -> schemas.Set
                 amount_minor=amount,
                 paid_minor=result.paid[uid],
                 balance_minor=balances[uid],
+                bill_minor=on_bills[uid],
             )
             for uid, amount in result.per_member.items()
         ],
@@ -231,9 +301,64 @@ def _calculate(db: Session, hh: models.Household, month: dt.date) -> schemas.Set
             schemas.Transfer(debtor=people[t.debtor], creditor=people[t.creditor], amount_minor=t.amount)
             for t in settle_up(balances)
         ],
+        bills=bills,
+        unchecked=[
+            schemas.Unchecked(
+                account_id=account_id,
+                account_name=db.get(models.Account, account_id).name,
+                import_id=import_id,
+                period=db.get(models.Import, import_id).period if import_id else None,
+                count=count,
+            )
+            for (account_id, import_id), count in sorted(unchecked.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0))
+        ],
         outlay_minor=result.outlay,
         shared_minor=result.shared,
         total_minor=result.total,
+    )
+
+
+def _bill(
+    card: models.Account, card_lines: list[Line], weights: dict[int, int], people: dict[int, schemas.Person]
+) -> schemas.Bill:
+    """What each member pays toward a card's statement; the owner also pays the outlays they fronted."""
+    split = settle(card_lines, weights)
+    shares = dict(split.per_member)
+    shares[card.owner_id] += split.outlay  # the owner is a member: leaving a household unshares their accounts
+    return schemas.Bill(
+        account_id=card.id,
+        account_name=card.name,
+        owner=people[card.owner_id],
+        total_minor=split.total,
+        outlay_minor=split.outlay,
+        shares=[schemas.BillShare(**people[uid].model_dump(), amount_minor=amount) for uid, amount in shares.items()],
+    )
+
+
+def statement_review(db: Session, imp: models.Import) -> schemas.StatementReview:
+    """How far along going through one statement is, and what it comes to on its own."""
+    account = db.get(models.Account, imp.account_id)
+    rows = list(db.scalars(select(models.Transaction).where(models.Transaction.import_id == imp.id)))
+    if account.household_id is not None:
+        weights = _weights(db, account.household_id)
+        household = db.get(models.Household, account.household_id)
+        people = {m.user_id: person(m.user) for m in household.memberships}
+    else:
+        weights = {account.owner_id: 1}  # not shared: all of it is the owner's
+        people = {account.owner_id: person(account.owner)}
+    lines = [
+        Line(t.amount_minor, t.allocation, t.member_id)
+        for t in rows
+        # Personal spending of someone who has left the household isn't anyone's here.
+        if t.allocation != Allocation.PERSONAL or t.member_id in weights
+    ]
+    return schemas.StatementReview(
+        statement=schemas.ImportResult.model_validate(imp),
+        account_name=account.name,
+        account_kind=account.kind,
+        total_count=len(rows),
+        checked_count=sum(t.reviewed for t in rows),
+        split=_bill(account, lines, weights, people),
     )
 
 

@@ -41,12 +41,16 @@ export interface Household {
     members: Member[];
 }
 
+/** debit: a bank account, paid as spent by its owner; credit: a card, paid later as one bill per statement. */
+export type AccountKind = "debit" | "credit";
+
 export interface Account {
     id: number;
     name: string;
     currency: string;
     owner: Person;
     household_id: number | null;
+    kind: AccountKind;
     import_config: ImportConfig | null; // how the next upload will be read
     members: Person[]; // who a transaction can be marked as personal for
 }
@@ -56,12 +60,14 @@ export interface Transaction {
     account_id: number;
     import_id: number | null;
     booked_on: string; // ISO date, YYYY-MM-DD
+    period: string; // YYYY-MM: the month it counts toward (its statement's, or the month it was booked in)
     description: string;
     amount_minor: number;
     currency: string;
     allocation: Allocation;
     member_id: number | null;
     category: string | null;
+    reviewed: boolean; // someone has gone through it and said whose it is
 }
 
 export interface NewTransaction {
@@ -108,6 +114,7 @@ export interface ImportPreview {
     }[];
     new_count: number;
     duplicate_count: number;
+    period: string | null; // YYYY-MM: the month the upload will count toward (the month it ends in)
     already_imported_at: string | null;
     error: string | null;
 }
@@ -119,6 +126,7 @@ export interface ImportResult {
     filename: string;
     period_start: string | null;
     period_end: string | null;
+    period: string | null; // YYYY-MM: the month its transactions count toward
     transaction_count: number;
     duplicate_count: number;
     created_at: string;
@@ -162,15 +170,29 @@ export interface Trends {
 
 export interface MemberShare extends Person {
     amount_minor: number; // responsible for: personal spending plus their part of shared
-    paid_minor: number; // shared and personal spending on accounts they own
-    balance_minor: number; // positive is owed money, negative owes
+    paid_minor: number; // shared and personal spending on bank accounts they own (cards aren't paid yet)
+    balance_minor: number; // bank-account spending only: positive is owed money, negative owes
+    bill_minor?: number; // missing in older closed months; what they pay toward the month's credit card bills
+}
+
+/** A credit card's statement: nobody has paid it yet, so it's split as what each member pays. */
+export interface Bill {
+    account_id: number;
+    account_name: string;
+    owner: Person;
+    total_minor: number;
+    outlay_minor: number; // included in the owner's share: they fronted it
+    shares: (Person & { amount_minor: number })[];
 }
 
 export interface Settlement {
     household_id: number;
     month: string; // YYYY-MM
     per_member: MemberShare[];
-    transfers: { debtor: Person; creditor: Person; amount_minor: number }[];
+    transfers: { debtor: Person; creditor: Person; amount_minor: number }[]; // for bank-account spending
+    bills?: Bill[]; // one per credit card; missing in months closed before cards were split as bills
+    // Transactions in the month nobody has gone through yet, per statement (import_id null: added by hand).
+    unchecked?: { account_id: number; account_name: string; import_id: number | null; period: string | null; count: number }[];
     outlay_minor: number;
     shared_minor: number;
     total_minor: number;
@@ -261,10 +283,10 @@ export const reopenMonth = async (householdId: number, month: string) => {
 
 export const getAccounts = async () => (await api.get<Account[]>("/accounts")).data;
 
-export const createAccount = async (name: string, household_id: number | null) =>
-    (await api.post<Account>("/accounts", { name, household_id })).data;
+export const createAccount = async (name: string, household_id: number | null, kind: AccountKind) =>
+    (await api.post<Account>("/accounts", { name, household_id, kind })).data;
 
-export const updateAccount = async (accountId: number, changes: Partial<Pick<Account, "name" | "household_id">>) =>
+export const updateAccount = async (accountId: number, changes: Partial<Pick<Account, "name" | "household_id" | "kind">>) =>
     (await api.patch<Account>(`/accounts/${accountId}`, changes)).data;
 
 export const deleteAccount = async (accountId: number) => {
@@ -287,6 +309,23 @@ export const confirmImport = async (accountId: number, file: File, config?: Impo
 
 export const getImports = async (accountId: number) =>
     (await api.get<ImportResult[]>(`/accounts/${accountId}/imports`)).data;
+
+/** Move an upload, with its transactions, to another month (YYYY-MM). */
+export const updateImport = async (accountId: number, importId: number, period: string) =>
+    (await api.patch<ImportResult>(`/accounts/${accountId}/imports/${importId}`, { period })).data;
+
+/** Going through a statement: how many are checked, and what each person's part comes to so far. */
+export interface StatementReview {
+    statement: ImportResult;
+    account_name: string;
+    account_kind: AccountKind;
+    total_count: number;
+    checked_count: number;
+    split: Bill; // what each pays (a card) or is responsible for (a bank account), on this statement alone
+}
+
+export const getStatementReview = async (accountId: number, importId: number) =>
+    (await api.get<StatementReview>(`/accounts/${accountId}/imports/${importId}/review`)).data;
 
 export const undoImport = async (accountId: number, importId: number) => {
     await api.delete(`/accounts/${accountId}/imports/${importId}`);
@@ -345,6 +384,19 @@ export const setBudget = async (
 export const getSummary = async (householdId: number | null, month: string) =>
     (await api.get<Summary>("/summary", { params: { ...scope(householdId).params, month } })).data;
 
+export interface Analysis {
+    month: string; // YYYY-MM
+    spent_minor: number;
+    previous_spent_minor: number;
+    categories: { category: string; spent_minor: number; previous_minor: number }[]; // largest first
+    // A household's view only: what each member is responsible for, personal purchases included.
+    members: (Person & { amount_minor: number; by_category: Record<string, number> })[];
+}
+
+/** Where a month's money went, per category against the month before, and per member in a household. */
+export const getAnalysis = async (householdId: number | null, month: string) =>
+    (await api.get<Analysis>("/analysis", { params: { ...scope(householdId).params, month } })).data;
+
 /** Spending per month and category, `from` through `to` (YYYY-MM). */
 export const getTrends = async (householdId: number | null, from: string, to: string) =>
     (await api.get<Trends>("/trends", { params: { ...scope(householdId).params, from, to } })).data;
@@ -365,7 +417,16 @@ export const getTransactions = async (householdId: number | null) =>
 export const createTransaction = async (accountId: number, transaction: NewTransaction) =>
     (await api.post<Transaction>(`/accounts/${accountId}/transactions`, transaction)).data;
 
-export type TransactionChanges = Partial<Pick<Transaction, "allocation" | "member_id" | "category">>;
+/** Changing allocation or member also checks it, unless `reviewed: false` is sent. */
+export type TransactionChanges = Partial<Pick<Transaction, "allocation" | "member_id" | "category" | "reviewed">>;
+
+/** Several changes at once, all or nothing. */
+export const updateTransactions = async (updates: ({ id: number } & TransactionChanges)[]) =>
+    (await api.patch<Transaction[]>("/transactions", updates)).data;
+
+/** One statement's transactions. */
+export const getStatementTransactions = async (importId: number) =>
+    (await api.get<Transaction[]>("/transactions", { params: { import_id: importId } })).data;
 
 export const updateTransaction = async (transactionId: number, changes: TransactionChanges) =>
     (await api.patch<Transaction[]>("/transactions", [{ id: transactionId, ...changes }])).data;

@@ -10,10 +10,11 @@ interface Props {
     onMonthChange: (month: string) => void;
     isOwner: boolean; // only owners can reopen a closed month
     transactions: Transaction[]; // only to know when spending changed
+    onReview: (accountId: number, importId: number) => void; // go through a statement
 }
 
 /** Who owes whom for one month, closing the month, and the months closed before. */
-const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOwner, transactions }: Props) => {
+const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOwner, transactions, onReview }: Props) => {
     const dialogs = useDialogs();
     const [result, setResult] = useState<Settlement | null>(null);
     const [history, setHistory] = useState<Settlement[]>([]);
@@ -65,6 +66,7 @@ const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOw
             change(() => reopenMonth(householdId, month));
     };
 
+    const bills = result?.bills ?? [];
     const colorOf = (userId: number) => memberColor(Math.max(0, result?.per_member.findIndex((m) => m.user_id === userId) ?? 0));
 
     return (
@@ -82,24 +84,70 @@ const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOw
                 </p>
             )}
 
+            {!result?.closed_at && (result?.unchecked ?? []).length > 0 && (
+                <div className="notice" role="status">
+                    <p className="lead">Not everything has been gone through yet.</p>
+                    <ul>
+                        {result!.unchecked!.map((u) => (
+                            <li key={`${u.account_id}-${u.import_id}`}>
+                                {u.count} on {u.account_name}
+                                {u.import_id !== null ? " statement" : ", added by hand"}{" "}
+                                {u.import_id !== null && (
+                                    <button className="link" onClick={() => onReview(u.account_id, u.import_id!)}>
+                                        Go through them
+                                    </button>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="small muted">Until then they count as their account's default: shared on a shared account.</p>
+                </div>
+            )}
+
             {result && (
                 <>
-                    <section className="verdict" aria-label="Who owes whom">
-                        {result.transfers.length === 0 ? (
+                    <section className="verdict" aria-label="Who pays what">
+                        {bills.length === 0 && result.transfers.length === 0 && (
                             <p className="display rise">Everyone is even.</p>
-                        ) : (
-                            <ul className="verdict" style={{ listStyle: "none", padding: 0 }}>
-                                {result.transfers.map((t, i) => (
-                                    <li
-                                        key={`${t.debtor.user_id}-${t.creditor.user_id}`}
-                                        className="transfer rise"
-                                        style={{ ["--i" as string]: i }}
-                                    >
-                                        {t.debtor.display_name} pays {t.creditor.display_name}{" "}
-                                        <span className="amt">{kr(t.amount_minor)}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                        )}
+                        {bills.map((b) => (
+                            <div key={b.account_id} className="bill">
+                                <p className="bill-head">
+                                    {b.account_name} bill <span className="muted">· {kr(b.total_minor)}</span>
+                                </p>
+                                <ul className="verdict" style={{ listStyle: "none", padding: 0 }}>
+                                    {b.shares
+                                        .filter((s) => s.amount_minor !== 0)
+                                        .map((s, i) => (
+                                            <li key={s.user_id} className="transfer rise" style={{ ["--i" as string]: i }}>
+                                                {s.display_name} pays <span className="amt">{kr(s.amount_minor)}</span>
+                                            </li>
+                                        ))}
+                                </ul>
+                                {b.outlay_minor > 0 && (
+                                    <p className="small muted">
+                                        {b.owner.display_name}'s part includes {kr(b.outlay_minor)} in outlays, to be
+                                        paid back outside the household.
+                                    </p>
+                                )}
+                            </div>
+                        ))}
+                        {result.transfers.length > 0 && (
+                            <div className="bill">
+                                {bills.length > 0 && <p className="bill-head">Already paid from bank accounts</p>}
+                                <ul className="verdict" style={{ listStyle: "none", padding: 0 }}>
+                                    {result.transfers.map((t, i) => (
+                                        <li
+                                            key={`${t.debtor.user_id}-${t.creditor.user_id}`}
+                                            className="transfer rise"
+                                            style={{ ["--i" as string]: i }}
+                                        >
+                                            {t.debtor.display_name} pays {t.creditor.display_name}{" "}
+                                            <span className="amt">{kr(t.amount_minor)}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
                         )}
                         <div className="row">
                             {result.closed_at ? (
@@ -156,6 +204,7 @@ const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOw
                                         <th>Member</th>
                                         <th className="num">Responsible for</th>
                                         <th className="num">Paid</th>
+                                        {bills.length > 0 && <th className="num">Pays on bills</th>}
                                         <th className="num">Balance</th>
                                     </tr>
                                 </thead>
@@ -172,6 +221,11 @@ const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOw
                                             <td className="num" data-label="Paid">
                                                 {kr(m.paid_minor)}
                                             </td>
+                                            {bills.length > 0 && (
+                                                <td className="num" data-label="Pays on bills">
+                                                    {kr(m.bill_minor ?? 0)}
+                                                </td>
+                                            )}
                                             <td data-label="Balance" className={`num ${m.balance_minor < 0 ? "balance-neg" : "balance-pos"}`}>
                                                 {m.balance_minor > 0 && "+"}
                                                 {kr(m.balance_minor)}
@@ -182,8 +236,9 @@ const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOw
                             </table>
                         </div>
                         <p className="small muted">
-                            A positive balance is owed money; a negative one owes. Paid counts spending on accounts each
-                            member owns.
+                            Paid counts spending on bank accounts each member owns. Credit card spending isn't paid yet,
+                            so it's split as a bill instead. The balance covers what's already paid: positive is owed
+                            money, negative owes.
                         </p>
                     </section>
                 </>
@@ -202,11 +257,16 @@ const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOw
                                 </button>
                                 <span className="amount">{kr(s.total_minor)}</span>
                                 <span className="sub">
-                                    {s.transfers.length === 0
-                                        ? "Everyone was even"
-                                        : s.transfers
-                                              .map((t) => `${t.debtor.display_name} paid ${t.creditor.display_name} ${kr(t.amount_minor)}`)
-                                              .join(" · ")}
+                                    {[
+                                        ...(s.bills ?? []).flatMap((b) =>
+                                            b.shares
+                                                .filter((x) => x.amount_minor !== 0)
+                                                .map((x) => `${x.display_name} ${kr(x.amount_minor)} of the ${b.account_name} bill`),
+                                        ),
+                                        ...s.transfers.map(
+                                            (t) => `${t.debtor.display_name} paid ${t.creditor.display_name} ${kr(t.amount_minor)}`,
+                                        ),
+                                    ].join(" · ") || "Everyone was even"}
                                 </span>
                             </li>
                         ))}

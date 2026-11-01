@@ -25,7 +25,11 @@ def create_account(
 ):
     _check_household(db, user, data.household_id)
     account = models.Account(
-        owner=user, name=data.name.strip(), currency=data.currency.upper(), household_id=data.household_id
+        owner=user,
+        name=data.name.strip(),
+        currency=data.currency.upper(),
+        household_id=data.household_id,
+        kind=data.kind,
     )
     db.add(account)
     db.commit()
@@ -42,6 +46,9 @@ def update_account(
 ):
     if data.name is not None:
         account.name = data.name.strip()
+    if data.kind is not None:
+        # Changes how open months are settled; closed months keep what they stored.
+        account.kind = data.kind
     if "household_id" in data.model_fields_set and data.household_id != account.household_id:
         _check_household(db, user, data.household_id)
         account.household_id = data.household_id

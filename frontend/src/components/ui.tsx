@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { addMonths, monthName } from "../api";
+import { addMonths, kr, monthName, monthShort } from "../api";
+import type { Trends } from "../api";
 
 /** The Leva mark: one block cut into two shares (60/40) by the motif's gap. */
 export const Mark = ({ size = 28 }: { size?: number }) => (
@@ -88,6 +89,39 @@ export const MonthStepper = ({ month, onChange }: { month: string; onChange: (mo
         </button>
     </div>
 );
+
+export const TREND_MONTHS = 12;
+
+/** Twelve months of spending as bars; the chosen month in the accent. Choosing a bar moves the whole view. */
+export const TrendBars = ({ trends, month, onSelect }: { trends: Trends; month: string; onSelect: (m: string) => void }) => {
+    const max = Math.max(1, ...trends.months.map((p) => p.spent_minor));
+    return (
+        <div className="trend">
+            <div className="trend-bars" role="group" aria-label="Spending per month">
+                {trends.months.map((p, i) => {
+                    const h = `${(Math.max(0, p.spent_minor) / max) * 100}%`;
+                    return (
+                        <button
+                            key={p.month}
+                            type="button"
+                            className={`trend-bar${i < 2 ? " edge-start" : i >= trends.months.length - 2 ? " edge-end" : ""}`}
+                            aria-pressed={p.month === month}
+                            aria-label={`${monthName(p.month)}: ${kr(p.spent_minor)}`}
+                            onClick={() => onSelect(p.month)}
+                            style={{ ["--i" as string]: i, ["--h" as string]: `calc((14rem - 1.65rem) * ${Math.max(0, p.spent_minor) / max})` }}
+                        >
+                            <span className="tip">
+                                {monthShort(p.month)} {kr(p.spent_minor)}
+                            </span>
+                            <span className="bar" style={{ height: `calc(${h} - 1.65rem)` }} />
+                            <span className="m">{monthShort(p.month).slice(0, 1)}</span>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
 
 // ---------- dialogs: confirm and prompt, in place of window.confirm/prompt ----------
 

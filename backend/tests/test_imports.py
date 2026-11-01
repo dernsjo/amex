@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from tests.test_api import AMEX_CSV, upload
+from tests.test_api import AMEX_CSV, add, upload, user_id
 
 BANK_CSV = (
     "Kontoutdrag;;;\n"
@@ -152,3 +152,83 @@ def test_cannot_undo_another_accounts_import_through_own_account(axel, account):
     other = axel.post("/accounts", json={"name": "Other"}).json()["id"]
     imp = confirm(axel, other, AMEX_CSV).json()
     assert axel.delete(f"/accounts/{account}/imports/{imp['id']}").status_code == 404
+
+
+# Statement periods: an upload counts toward the month it ends in
+
+STATEMENT_CSV = (
+    "Bokföringsdag;Text;Belopp;Saldo\n"
+    "2025-09-27;ICA NARA;-100,00;0\n"
+    "2025-10-10;SL;-200,00;0\n"
+    "2025-10-27;COOP;-400,00;0\n"
+).encode("cp1252")
+
+
+def test_an_upload_counts_toward_the_month_it_ends_in(couple, axel, ebba):
+    household_id, account_id = couple
+    assert preview(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()["period"] == "2025-10"
+    imp = confirm(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()
+    assert imp["period"] == "2025-10"
+    september = {"month": "2025-09"}
+    october = {"month": "2025-10"}
+
+    # 27 September is on October's statement, so it counts toward October.
+    assert ebba.get(f"/households/{household_id}/settlement", params=september).json()["shared_minor"] == 0
+    assert ebba.get(f"/households/{household_id}/settlement", params=october).json()["shared_minor"] == 70000
+    summary = ebba.get("/summary", params=october | {"household_id": household_id}).json()
+    assert summary["spent_minor"] == 70000
+
+    # A transaction added by hand counts toward the month it was booked in.
+    add(axel, account_id, 50, "Cash", booked_on="2025-09-28")
+    assert ebba.get(f"/households/{household_id}/settlement", params=september).json()["shared_minor"] == 5000
+
+
+def test_an_upload_can_move_to_another_month(couple, axel, ebba):
+    household_id, account_id = couple
+    imp = confirm(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()
+    url = f"/accounts/{account_id}/imports/{imp['id']}"
+
+    r = axel.patch(url, json={"period": "2025-11"})
+    assert r.status_code == 200 and r.json()["period"] == "2025-11"
+    settlement = ebba.get(f"/households/{household_id}/settlement", params={"month": "2025-11"}).json()
+    assert settlement["shared_minor"] == 70000
+
+    assert axel.patch(url, json={"period": "2025-13"}).status_code == 422
+    assert ebba.patch(url, json={"period": "2025-10"}).status_code in (403, 404)  # not her account
+
+
+# Going through a statement
+
+
+def test_reviewing_a_statement(couple, axel, ebba):
+    household_id, account_id = couple
+    axel.patch(f"/accounts/{account_id}", json={"kind": "credit"})
+    imp = confirm(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()
+    review_url = f"/accounts/{account_id}/imports/{imp['id']}/review"
+
+    review = ebba.get(review_url).json()  # a household member can go through it too
+    assert (review["total_count"], review["checked_count"], review["account_kind"]) == (3, 0, "credit")
+    assert {s["display_name"]: s["amount_minor"] for s in review["split"]["shares"]} == {"axel": 35000, "ebba": 35000}
+
+    rows = ebba.get("/transactions", params={"import_id": imp["id"]}).json()
+    assert len(rows) == 3 and not any(t["reviewed"] for t in rows)
+    shoes, *rest = sorted(rows, key=lambda t: t["amount_minor"])  # the 100 kr line
+    # Saying whose it is checks it; confirming one as it is checks it too.
+    r = ebba.patch("/transactions", json=[{"id": shoes["id"], "member_id": user_id(ebba)}, {"id": rest[0]["id"], "reviewed": True}])
+    assert [t["reviewed"] for t in r.json()] == [True, True]
+    # A category alone doesn't.
+    ebba.patch("/transactions", json=[{"id": rest[1]["id"], "category": "Travel"}])
+
+    review = ebba.get(review_url).json()
+    assert review["checked_count"] == 2
+    assert {s["display_name"]: s["amount_minor"] for s in review["split"]["shares"]} == {"axel": 30000, "ebba": 40000}
+
+    settlement = ebba.get(f"/households/{household_id}/settlement", params={"month": "2025-10"}).json()
+    assert [(u["account_name"], u["import_id"], u["period"], u["count"]) for u in settlement["unchecked"]] == [
+        ("Amex", imp["id"], "2025-10", 1)
+    ]
+
+
+def test_added_by_hand_is_already_checked(couple, axel):
+    _, account_id = couple
+    assert add(axel, account_id, 10)["reviewed"] is True

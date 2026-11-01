@@ -11,6 +11,9 @@ unshared accounts) or a household (for the accounts shared into it). Transaction
 store the category by name, so "Groceries" adds up across scopes in "My view".
 
 A household can close a month, which stores its settlement as a snapshot.
+"Month" means the period a transaction counts toward (Transaction.period): an
+upload is one statement and counts toward one month, so a card statement for
+27 Sep – 27 Oct is October. Transactions added by hand count toward their own month.
 """
 
 import datetime as dt
@@ -26,6 +29,14 @@ from .database import Base
 class Role(StrEnum):
     OWNER = "owner"
     MEMBER = "member"
+
+
+class AccountKind(StrEnum):
+    """How an account's spending is paid: a bank account's is paid as it happens, by
+    its owner; a credit card's is paid later, as one bill per statement."""
+
+    DEBIT = "debit"
+    CREDIT = "credit"
 
 
 def _enum(enum_class: type[StrEnum]) -> Enum:
@@ -83,6 +94,7 @@ class Account(Base):
     household_id: Mapped[int | None] = mapped_column(ForeignKey("households.id", ondelete="SET NULL"), index=True)
     name: Mapped[str] = mapped_column(String(100))
     currency: Mapped[str] = mapped_column(String(3), default="SEK")
+    kind: Mapped[AccountKind] = mapped_column(_enum(AccountKind), default=AccountKind.DEBIT, server_default="debit")
     # How uploads are read (spending_core.ImportConfig.to_dict()); saved on each confirmed import.
     import_config: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
@@ -100,11 +112,18 @@ class Import(Base):
     importer: Mapped[str] = mapped_column(String(50))
     filename: Mapped[str] = mapped_column(String(255))
     file_hash: Mapped[str] = mapped_column(String(64))  # sha256 of the uploaded bytes
-    period_start: Mapped[dt.date | None]
+    period_start: Mapped[dt.date | None]  # the earliest and latest booking date in the file
     period_end: Mapped[dt.date | None]
+    # The month this upload counts toward, as its first day: an upload is one statement,
+    # so 27 Sep – 27 Oct is October. Defaults to the month of period_end; can be changed.
+    period: Mapped[dt.date | None]
     transaction_count: Mapped[int] = mapped_column(default=0)
     duplicate_count: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+
+
+def _booked_month(context) -> dt.date:
+    return context.get_current_parameters()["booked_on"].replace(day=1)
 
 
 class Transaction(Base):
@@ -116,6 +135,9 @@ class Transaction(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
     import_id: Mapped[int | None] = mapped_column(ForeignKey("imports.id", ondelete="CASCADE"), index=True)
     booked_on: Mapped[dt.date] = mapped_column(index=True)
+    # The month it counts toward, as its first day: its upload's period, or for a
+    # transaction added by hand, the month it was booked in.
+    period: Mapped[dt.date] = mapped_column(index=True, default=_booked_month)
     description_raw: Mapped[str] = mapped_column(String(500))
     description_clean: Mapped[str] = mapped_column(String(500))
     amount_minor: Mapped[int] = mapped_column(BigInteger)  # öre; positive = spending, negative = refund
@@ -126,6 +148,8 @@ class Transaction(Base):
     category: Mapped[str | None] = mapped_column(String(100))  # a Category name in the account's scope
     # Set by a person rather than by rules; rule changes don't touch it.
     category_manual: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Someone has gone through it and said whose it is (see the statement review).
+    reviewed: Mapped[bool] = mapped_column(default=False, server_default=false())
     dedupe_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 

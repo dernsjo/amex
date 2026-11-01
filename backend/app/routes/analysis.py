@@ -45,3 +45,14 @@ def get_trends(
     if len(analysis.months(start, end)) > analysis.MAX_TREND_MONTHS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"At most {analysis.MAX_TREND_MONTHS} months")
     return analysis.trends(db, where, user, start, end)
+
+
+@router.get("/analysis", response_model=schemas.Analysis)
+def get_analysis(
+    month: str = Query(pattern=MONTH, description="YYYY-MM"),
+    where: Scope = Depends(scope),
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Spending per category against the month before; for a household, also what each member is responsible for."""
+    return analysis.breakdown(db, where, user, month_start(month))

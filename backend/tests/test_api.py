@@ -223,10 +223,12 @@ def test_settlement_matches_poc(couple, axel, ebba):
         "month": this_month(),
         "per_member": [
             # Axel's card paid it all (the outlay is settled with someone else).
-            {**axel_person, "amount_minor": 70000, "paid_minor": 125000, "balance_minor": 55000},
-            {**ebba_person, "amount_minor": 55000, "paid_minor": 0, "balance_minor": -55000},
+            {**axel_person, "amount_minor": 70000, "paid_minor": 125000, "balance_minor": 55000, "bill_minor": 0},
+            {**ebba_person, "amount_minor": 55000, "paid_minor": 0, "balance_minor": -55000, "bill_minor": 0},
         ],
         "transfers": [{"debtor": ebba_person, "creditor": axel_person, "amount_minor": 55000}],
+        "bills": [],  # a bank account: paid already, so no bill to split
+        "unchecked": [],  # added by hand, so already checked
         "outlay_minor": 30000,
         "shared_minor": 100000,
         "total_minor": 155000,
