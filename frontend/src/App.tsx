@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { errorMessage, getAccounts, getCategories, getMe, getTransactions, updateMe } from "./api";
+import { errorMessage, getAccounts, getCategories, getMe, getTransactions, thisMonth, updateMe } from "./api";
 import type { Account, Me, Transaction } from "./api";
 import { supabase } from "./supabase";
 import Login from "./components/Login";
@@ -12,6 +12,7 @@ import ImportWizard from "./components/ImportWizard";
 import SettlementCard from "./components/SettlementCard";
 import CategoryPanel from "./components/CategoryPanel";
 import BudgetPanel from "./components/BudgetPanel";
+import Dashboard from "./components/Dashboard";
 import "./App.css";
 
 function App() {
@@ -32,6 +33,7 @@ function Home() {
     const [me, setMe] = useState<Me | null>(null);
     // null: everything you can see; a number: only what's shared into that household.
     const [householdId, setHouseholdId] = useState<number | null>(null);
+    const [month, setMonth] = useState(thisMonth); // YYYY-MM, for the dashboard, budget and settlement
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     // Category names per scope: "me" for your unshared accounts, else a household id.
@@ -87,7 +89,8 @@ function Home() {
     const myAccounts = accounts.filter((a) => a.owner.user_id === me.id);
     // An account uses its household's categories when shared, else its owner's.
     const categoriesFor = (account: Account | undefined) => categories[account?.household_id ?? "me"] ?? [];
-    const viewName = householdId ? me.households.find((h) => h.id === householdId)?.name : undefined;
+    const household = me.households.find((h) => h.id === householdId);
+    const viewName = household?.name;
     const handleCategoriesChanged = async () => {
         await fetchCategories(me.households);
         await fetchTransactions();
@@ -119,13 +122,35 @@ function Home() {
 
             <h1>{viewName ?? "Spending"}</h1>
 
+            <Dashboard
+                householdId={householdId}
+                month={month}
+                onMonthChange={setMonth}
+                transactions={transactions}
+                categoriesVersion={categoriesVersion}
+            />
+
+            {household && (
+                <SettlementCard
+                    householdId={household.id}
+                    month={month}
+                    isOwner={household.role === "owner"}
+                    transactions={transactions}
+                />
+            )}
+
             <AccountPanel me={me} accounts={accounts} onChanged={() => fetchAll()} />
 
             <HouseholdPanel me={me} householdId={householdId} onChanged={fetchAll} />
 
             <ImportWizard accounts={myAccounts} onImported={() => fetchAll()} />
 
-            <BudgetPanel householdId={householdId} transactions={transactions} categoriesVersion={categoriesVersion} />
+            <BudgetPanel
+                householdId={householdId}
+                month={month}
+                transactions={transactions}
+                categoriesVersion={categoriesVersion}
+            />
 
             <CategoryPanel
                 key={householdId ?? "me"}
@@ -143,8 +168,6 @@ function Home() {
                 categoriesFor={categoriesFor}
                 fetchTransactions={fetchTransactions}
             />
-
-            {householdId && <SettlementCard householdId={householdId} transactions={transactions} />}
         </div>
     );
 }

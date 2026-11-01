@@ -28,7 +28,16 @@ from .importers import (
     resolve,
 )
 from .money import format_minor, parse_amount, to_minor
-from .settlement import Allocation, Line, Settlement, allocation_from_label, settle, settle_by_category
+from .settlement import (
+    Allocation,
+    Line,
+    Settlement,
+    Transfer,
+    allocation_from_label,
+    settle,
+    settle_by_category,
+    settle_up,
+)
 
 __all__ = [
     "Allocation",
@@ -46,6 +55,7 @@ __all__ = [
     "Rule",
     "Settlement",
     "Table",
+    "Transfer",
     "allocation_from_label",
     "categorize",
     "dedupe_hashes",
@@ -59,5 +69,6 @@ __all__ = [
     "resolve",
     "settle",
     "settle_by_category",
+    "settle_up",
     "to_minor",
 ]

@@ -266,15 +266,52 @@ class BudgetMonth(BaseModel):
     spent_minor: int
 
 
+# Analysis
+
+Month = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YYYY-MM")
+
+
+class Summary(BudgetMonth):
+    """A month at a glance: each category against its target, and where the money went."""
+
+    largest: list[Transaction]  # the biggest spending that counts in this view
+    previous_spent_minor: int  # the month before, for comparison
+
+
+class TrendMonth(BaseModel):
+    month: str  # YYYY-MM
+    spent_minor: int
+    by_category: dict[str, int]  # categories with no spending are left out
+
+
+class Trends(BaseModel):
+    months: list[TrendMonth]  # every month in the range, oldest first
+
+
 # Settlement
 
 class MemberShare(Person):
+    amount_minor: int  # what they're responsible for: their personal spending plus their part of shared
+    paid_minor: int  # shared and personal spending on accounts they own
+    balance_minor: int  # paid minus responsible: positive is owed money, negative owes
+
+
+class Transfer(BaseModel):
+    debtor: Person
+    creditor: Person
     amount_minor: int
 
 
 class Settlement(BaseModel):
     household_id: int
+    month: str  # YYYY-MM
     per_member: list[MemberShare]
+    transfers: list[Transfer]  # who pays whom to even out the month
     outlay_minor: int
     shared_minor: int
     total_minor: int
+    closed_at: datetime | None = None  # set when this is a closed month's stored result
+
+
+class SettlementClose(BaseModel):
+    month: str = Month

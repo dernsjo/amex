@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import categories, models, schemas
+from .. import analysis, categories, models, schemas
 from ..access import Scope, scope
 from ..auth import get_current_user
 from ..database import get_db
@@ -137,7 +137,7 @@ def get_budgets(
     db: Session = Depends(get_db),
 ):
     """Each category's target against spending: shared spending for a household, your own share for you."""
-    result = categories.budget_month(db, where, user, categories.month_start(month))
+    result = analysis.budget_month(db, where, user, categories.month_start(month))
     db.commit()
     return result
 

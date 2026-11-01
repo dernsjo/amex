@@ -1,3 +1,5 @@
+from datetime import date
+
 from app import models
 
 AMEX_CSV = (
@@ -194,6 +196,14 @@ def test_delete_transaction(couple, axel, ebba):
 # Settlement
 
 
+def this_month():
+    return date.today().strftime("%Y-%m")
+
+
+def settlement(client, household_id, month=None):
+    return client.get(f"/households/{household_id}/settlement", params={"month": month or this_month()})
+
+
 def test_settlement_matches_poc(couple, axel, ebba):
     household_id, account_id = couple
     axel_id, ebba_id = user_id(axel), user_id(ebba)
@@ -204,17 +214,23 @@ def test_settlement_matches_poc(couple, axel, ebba):
     add(axel, account_id, 999, allocation="excluded")
     axel.post("/accounts", json={"name": "Private"})  # unshared accounts don't count
 
-    r = ebba.get(f"/households/{household_id}/settlement")
+    r = settlement(ebba, household_id)
     assert r.status_code == 200
+    axel_person = {"user_id": axel_id, "display_name": "axel"}
+    ebba_person = {"user_id": ebba_id, "display_name": "ebba"}
     assert r.json() == {
         "household_id": household_id,
+        "month": this_month(),
         "per_member": [
-            {"user_id": axel_id, "display_name": "axel", "amount_minor": 70000},
-            {"user_id": ebba_id, "display_name": "ebba", "amount_minor": 55000},
+            # Axel's card paid it all (the outlay is settled with someone else).
+            {**axel_person, "amount_minor": 70000, "paid_minor": 125000, "balance_minor": 55000},
+            {**ebba_person, "amount_minor": 55000, "paid_minor": 0, "balance_minor": -55000},
         ],
+        "transfers": [{"debtor": ebba_person, "creditor": axel_person, "amount_minor": 55000}],
         "outlay_minor": 30000,
         "shared_minor": 100000,
         "total_minor": 155000,
+        "closed_at": None,
     }
 
 
@@ -223,7 +239,7 @@ def test_settlement_uses_split_weights(couple, axel, ebba):
     axel.patch(f"/households/{household_id}/members/{user_id(axel)}", json={"split_weight": 3})
     axel.patch(f"/households/{household_id}/members/{user_id(ebba)}", json={"split_weight": 2})
     add(axel, account_id, 1000)
-    shares = [m["amount_minor"] for m in axel.get(f"/households/{household_id}/settlement").json()["per_member"]]
+    shares = [m["amount_minor"] for m in settlement(axel, household_id).json()["per_member"]]
     assert shares == [60000, 40000]
 
 
@@ -232,7 +248,7 @@ def test_settlement_flags_personal_spending_of_former_member(couple, axel, ebba)
     ebba_id = user_id(ebba)
     add(axel, account_id, 50, member_id=ebba_id)
     ebba.delete(f"/households/{household_id}/members/{ebba_id}")
-    r = axel.get(f"/households/{household_id}/settlement")
+    r = settlement(axel, household_id)
     assert r.status_code == 409
     assert "isn't a member" in r.json()["detail"]
 

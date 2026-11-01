@@ -2,7 +2,7 @@ from fractions import Fraction
 
 import pytest
 
-from spending_core import Allocation, Line, allocation_from_label, settle, settle_by_category
+from spending_core import Allocation, Line, Transfer, allocation_from_label, settle, settle_by_category, settle_up
 
 S, P, O, X = Allocation.SHARED, Allocation.PERSONAL, Allocation.OUTLAY, Allocation.EXCLUDED
 EVEN = {"Axel": 1, "Ebba": 1}
@@ -94,3 +94,48 @@ def test_settle_by_category():
     assert result["Groceries"].per_member == {"A": 501, "B": 1000}
     assert result["Groceries"].shared == 1001
     assert result["Travel"].per_member == {"A": 150, "B": 150}
+
+
+# Who paid, and who owes whom
+
+
+def test_balances_from_who_paid():
+    # Axel's card paid everything; Ebba's personal 50 and half the shared 1000 are hers.
+    lines = [
+        Line(100000, S, payer="Axel"),
+        Line(20000, P, "Axel", payer="Axel"),
+        Line(5000, P, "Ebba", payer="Axel"),
+        Line(30000, O, payer="Axel"),  # settled with whoever is outside the split
+        Line(99900, X, payer="Axel"),
+    ]
+    result = settle(lines, EVEN)
+    assert result.paid == {"Axel": 125000, "Ebba": 0}
+    assert result.balances == {"Axel": 55000, "Ebba": -55000}
+    assert settle_up(result.balances) == [Transfer("Ebba", "Axel", 55000)]
+
+
+def test_both_paid_and_weights():
+    lines = [Line(60000, S, payer="A"), Line(40000, S, payer="B")]
+    result = settle(lines, {"A": 1, "B": 3})
+    assert result.balances == {"A": 35000, "B": -35000}
+
+
+def test_settle_up_three_members():
+    balances = {"A": 9000, "B": -6000, "C": -3000}
+    assert settle_up(balances) == [Transfer("B", "A", 6000), Transfer("C", "A", 3000)]
+    balances = {"A": 5000, "B": 1000, "C": -6000}
+    assert settle_up(balances) == [Transfer("C", "A", 5000), Transfer("C", "B", 1000)]
+
+
+def test_settle_up_when_even():
+    assert settle_up({"A": 0, "B": 0}) == []
+
+
+def test_settle_up_needs_balanced_input():
+    with pytest.raises(ValueError, match="add up to zero"):
+        settle_up({"A": 100, "B": 0})
+
+
+def test_unknown_payer():
+    with pytest.raises(ValueError, match="unknown member"):
+        settle([Line(100, S, payer="Ghost")], EVEN)

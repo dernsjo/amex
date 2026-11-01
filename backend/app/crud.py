@@ -1,11 +1,6 @@
 from datetime import date
 
-from spending_core import (
-    Allocation,
-    Line,
-    settle,
-    to_minor,
-)
+from spending_core import Allocation, to_minor
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -164,42 +159,3 @@ def create_transaction(
     db.commit()
     db.refresh(t)
     return t
-
-
-# Settlement
-
-class SettlementError(ValueError):
-    pass
-
-
-def settlement(db: Session, hh: models.Household) -> schemas.Settlement:
-    """Who is responsible for what across the accounts shared into the household."""
-    members = {m.user_id: m for m in hh.memberships}
-    lines = []
-    for t in get_household_transactions(db, hh.id):
-        if t.allocation == Allocation.PERSONAL and t.member_id not in members:
-            raise SettlementError(
-                f"Transaction {t.id} ({t.description_clean}) is personal for someone who isn't a member"
-            )
-        lines.append(Line(t.amount_minor, t.allocation, t.member_id))
-
-    # Without any weight the split is undefined; fall back to an even split.
-    weights = {uid: m.split_weight for uid, m in members.items()}
-    if sum(weights.values()) == 0:
-        weights = dict.fromkeys(members, 1)
-    result = settle(lines, weights)
-    return schemas.Settlement(
-        household_id=hh.id,
-        per_member=[
-            schemas.MemberShare(user_id=uid, display_name=members[uid].user.display_name, amount_minor=amount)
-            for uid, amount in result.per_member.items()
-        ],
-        outlay_minor=result.outlay,
-        shared_minor=result.shared,
-        total_minor=result.total,
-    )
-
-
-def get_household_transactions(db: Session, household_id: int) -> list[models.Transaction]:
-    shared = select(models.Account.id).where(models.Account.household_id == household_id)
-    return list(db.scalars(select(models.Transaction).where(models.Transaction.account_id.in_(shared))))

@@ -1,5 +1,7 @@
 """Adding someone to a household before they've signed in."""
 
+from datetime import date
+
 import pytest
 
 from tests.conftest import make_token
@@ -34,7 +36,8 @@ def test_pending_member_can_be_split_with(household, axel):
     assert {m["display_name"] for m in account["members"]} == {"axel", "Ebba"}
     axel.post(f"/accounts/{account['id']}/transactions", json={"description": "Rent", "amount": 1000})
     axel.post(f"/accounts/{account['id']}/transactions", json={"description": "Shoes", "amount": 100, "member_id": ebba_id})
-    shares = axel.get(f"/households/{household['id']}/settlement").json()["per_member"]
+    month = date.today().strftime("%Y-%m")
+    shares = axel.get(f"/households/{household['id']}/settlement", params={"month": month}).json()["per_member"]
     assert [(m["display_name"], m["amount_minor"]) for m in shares] == [("axel", 50000), ("Ebba", 60000)]
 
 

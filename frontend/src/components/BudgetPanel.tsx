@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { errorMessage, getBudgets, kr, setBudget } from "../api";
+import { errorMessage, getBudgets, kr, monthName, setBudget } from "../api";
 import type { BudgetLine, BudgetMonth, Transaction } from "../api";
 
 interface Props {
     householdId: number | null; // null: your own budget
+    month: string; // YYYY-MM
     transactions: Transaction[]; // only to know when spending changed
     categoriesVersion: number; // bumped when categories change
 }
@@ -13,14 +14,6 @@ interface Draft {
     amount: string; // kronor as typed; empty removes the target
     onlyThisMonth: boolean;
 }
-
-const thisMonth = () => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-};
-
-const monthName = (month: string) =>
-    new Date(`${month}-01T00:00:00`).toLocaleDateString("sv-SE", { month: "long", year: "numeric" });
 
 const Bar = ({ spent, target }: { spent: number; target: number | null }) => {
     if (!target) return null;
@@ -39,8 +32,7 @@ const Bar = ({ spent, target }: { spent: number; target: number | null }) => {
 };
 
 /** Each category's target against spending for one month. */
-const BudgetPanel = ({ householdId, transactions, categoriesVersion }: Props) => {
-    const [month, setMonth] = useState(thisMonth);
+const BudgetPanel = ({ householdId, month, transactions, categoriesVersion }: Props) => {
     const [budget, setBudgetMonth] = useState<BudgetMonth | null>(null);
     const [draft, setDraft] = useState<Draft | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -94,7 +86,6 @@ const BudgetPanel = ({ householdId, transactions, categoriesVersion }: Props) =>
                     ? "Spending marked shared on the household's accounts."
                     : "Your own share: your personal spending plus your part of each household's shared spending."}
             </p>
-            <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
             {error && <p role="alert">{error}</p>}
             {budget && (
                 <table border={1} style={{ width: "100%", borderCollapse: "collapse", marginTop: "8px" }}>
