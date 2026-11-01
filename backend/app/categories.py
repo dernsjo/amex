@@ -7,22 +7,13 @@ A scope gets a copy of the default categories the first time it's used.
 """
 
 import datetime as dt
-from collections import defaultdict
 
-from spending_core import (
-    DEFAULT_CATEGORIES,
-    FALLBACK_CATEGORY,
-    Allocation,
-    Categorizer,
-    Line,
-    Rule,
-    settle_by_category,
-)
-from sqlalchemy import ColumnElement, Select, select
+from spending_core import DEFAULT_CATEGORIES, FALLBACK_CATEGORY, Categorizer, Rule
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from . import models, schemas
-from .access import Scope, household_ids_of
+from . import models
+from .access import Scope
 
 
 # Categories
@@ -135,85 +126,3 @@ def set_budget(db: Session, scope: Scope, category: str, month: dt.date | None, 
         db.add(models.Budget(category=category, month=month, amount_minor=amount_minor, **scope.fields()))
     else:
         budget.amount_minor = amount_minor
-
-
-def budget_month(db: Session, scope: Scope, viewer: models.User, month: dt.date) -> schemas.BudgetMonth:
-    """Targets against spending for one month.
-
-    For a household, spending is what's shared. For a user it's their own share
-    of everything they can see: their personal spending plus their weighted share
-    of each household's shared spending, as in the settlement.
-    """
-    names = category_names(db, scope)
-    recurring: dict[str, int] = {}
-    override: dict[str, int] = {}
-    for b in db.scalars(
-        select(models.Budget).where(
-            scope.owns(models.Budget), models.Budget.month.is_(None) | (models.Budget.month == month)
-        )
-    ):
-        (recurring if b.month is None else override)[b.category] = b.amount_minor
-
-    if scope.household_id is not None:
-        spent = {c: s.shared for c, s in _settle(db, scope.household_id, month).items()}
-    else:
-        spent = _own_share(db, viewer, month)
-
-    lines = [
-        schemas.BudgetLine(
-            category=name,
-            recurring_minor=recurring.get(name),
-            override_minor=override.get(name),
-            target_minor=override.get(name, recurring.get(name)),
-            spent_minor=spent.get(name, 0),
-        )
-        for name in [*names, *sorted((set(spent) | set(recurring) | set(override)) - set(names))]
-    ]
-    return schemas.BudgetMonth(
-        month=month.strftime("%Y-%m"),
-        lines=lines,
-        target_minor=sum(line.target_minor or 0 for line in lines),
-        spent_minor=sum(line.spent_minor for line in lines),
-    )
-
-
-def _in_month(month: dt.date) -> ColumnElement[bool]:
-    return (models.Transaction.booked_on >= month) & (models.Transaction.booked_on < next_month(month))
-
-
-def _settle(db: Session, household_id: int, month: dt.date) -> dict:
-    members = {
-        m.user_id: m.split_weight
-        for m in db.scalars(select(models.Membership).where(models.Membership.household_id == household_id))
-    }
-    if sum(members.values()) == 0:
-        members = dict.fromkeys(members, 1)
-    transactions = db.scalars(
-        select(models.Transaction).where(
-            models.Transaction.account_id.in_(Scope(household_id=household_id).account_ids()), _in_month(month)
-        )
-    )
-    return settle_by_category(
-        [
-            (t.category or FALLBACK_CATEGORY, Line(t.amount_minor, t.allocation, t.member_id))
-            for t in transactions
-            # Personal spending of someone who has left the household isn't anyone's here.
-            if t.allocation != Allocation.PERSONAL or t.member_id in members
-        ],
-        members,
-    )
-
-
-def _own_share(db: Session, user: models.User, month: dt.date) -> dict[str, int]:
-    spent: dict[str, int] = defaultdict(int)
-    for t in db.scalars(
-        select(models.Transaction).where(
-            models.Transaction.account_id.in_(Scope(user_id=user.id).account_ids()), _in_month(month)
-        )
-    ):
-        if t.allocation == Allocation.SHARED or (t.allocation == Allocation.PERSONAL and t.member_id == user.id):
-            spent[t.category or FALLBACK_CATEGORY] += t.amount_minor
-    for household_id in db.scalars(household_ids_of(user)):
-        for category, result in _settle(db, household_id, month).items():
-            spent[category] += result.per_member.get(user.id, 0)
-    return dict(spent)

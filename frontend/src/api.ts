@@ -151,13 +151,47 @@ export interface BudgetMonth {
     spent_minor: number;
 }
 
+export interface Summary extends BudgetMonth {
+    largest: Transaction[]; // the biggest spending that counts in this view
+    previous_spent_minor: number; // the month before
+}
+
+export interface Trends {
+    months: { month: string; spent_minor: number; by_category: Record<string, number> }[]; // oldest first
+}
+
+export interface MemberShare extends Person {
+    amount_minor: number; // responsible for: personal spending plus their part of shared
+    paid_minor: number; // shared and personal spending on accounts they own
+    balance_minor: number; // positive is owed money, negative owes
+}
+
 export interface Settlement {
     household_id: number;
-    per_member: (Person & { amount_minor: number })[];
+    month: string; // YYYY-MM
+    per_member: MemberShare[];
+    transfers: { debtor: Person; creditor: Person; amount_minor: number }[];
     outlay_minor: number;
     shared_minor: number;
     total_minor: number;
+    closed_at: string | null; // set when the month is closed and this is what was stored
 }
+
+/** The current month as YYYY-MM. */
+export const thisMonth = () => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+};
+
+/** A YYYY-MM month moved by `delta` months. */
+export const addMonths = (month: string, delta: number) => {
+    const [year, m] = month.split("-").map(Number);
+    const d = new Date(year, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+export const monthName = (month: string) =>
+    new Date(`${month}-01T00:00:00`).toLocaleDateString("sv-SE", { month: "long", year: "numeric" });
 
 /** Format öre as kronor. */
 export const kr = (minor: number, currency = "SEK") =>
@@ -199,8 +233,21 @@ export const removeMember = async (householdId: number, userId: number) => {
     await api.delete(`/households/${householdId}/members/${userId}`);
 };
 
-export const getSettlement = async (householdId: number) =>
-    (await api.get<Settlement>(`/households/${householdId}/settlement`)).data;
+/** A closed month answers what was stored when it was closed. */
+export const getSettlement = async (householdId: number, month: string) =>
+    (await api.get<Settlement>(`/households/${householdId}/settlement`, { params: { month } })).data;
+
+/** Closed months, newest first. */
+export const getSettlements = async (householdId: number) =>
+    (await api.get<Settlement[]>(`/households/${householdId}/settlements`)).data;
+
+export const closeMonth = async (householdId: number, month: string) =>
+    (await api.post<Settlement>(`/households/${householdId}/settlements`, { month })).data;
+
+/** Owners only. */
+export const reopenMonth = async (householdId: number, month: string) => {
+    await api.delete(`/households/${householdId}/settlements/${month}`);
+};
 
 // Accounts
 
@@ -285,6 +332,14 @@ export const setBudget = async (
 ) => {
     await api.put("/budgets", { category, month, amount_minor }, scope(householdId));
 };
+
+/** Spending against targets for one month, the largest spending, and the month before's total. */
+export const getSummary = async (householdId: number | null, month: string) =>
+    (await api.get<Summary>("/summary", { params: { ...scope(householdId).params, month } })).data;
+
+/** Spending per month and category, `from` through `to` (YYYY-MM). */
+export const getTrends = async (householdId: number | null, from: string, to: string) =>
+    (await api.get<Trends>("/trends", { params: { ...scope(householdId).params, from, to } })).data;
 
 /** The start of a rule for a description: its first two words without digits, e.g. "PRESSBYRÅN STH". */
 export const suggestPattern = (description: string) => {

@@ -9,6 +9,8 @@ always "accounts I own, or accounts shared into a household I'm a member of"
 Categories, category rules and budgets belong to a scope: a user (for their
 unshared accounts) or a household (for the accounts shared into it). Transactions
 store the category by name, so "Groceries" adds up across scopes in "My view".
+
+A household can close a month, which stores its settlement as a snapshot.
 """
 
 import datetime as dt
@@ -182,3 +184,17 @@ class Budget(Scoped, Base):
     category: Mapped[str] = mapped_column(String(100))
     month: Mapped[dt.date | None]  # the first day of the month
     amount_minor: Mapped[int] = mapped_column(BigInteger)
+
+
+class Settlement(Base):
+    """A closed month: the household's settlement as it stood, so later edits don't change history."""
+
+    __tablename__ = "settlements"
+    __table_args__ = (UniqueConstraint("household_id", "month"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+    month: Mapped[dt.date]  # the first day of the month
+    result: Mapped[dict] = mapped_column(JSON)  # schemas.Settlement, without closed_at
+    closed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    closed_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())

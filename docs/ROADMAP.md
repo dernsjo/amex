@@ -44,7 +44,7 @@ Scope = a User (their unshared accounts) or a Household (accounts shared into it
 Scope ──< Category             (name, default_key; defaults copied on first use)
 Scope ──< CategoryRule         (pattern → category name)
 Scope ──< Budget               (category name, month or null = every month)
-Household ──< Settlement       (period, result snapshot, closed_at)   (Phase 4)
+Household ──< Settlement       (month, result snapshot, closed_at)
 ```
 
 Key decisions:
@@ -68,7 +68,9 @@ Key decisions:
   adds up across your own and your households' accounts in "My view".
 - **Who paid comes from the account owner** (Phase 4 uses this for "who owes whom").
 - **Settlement for N members:** each member's share = their personal spending +
-  weight × shared spending. Outlays are reported separately.
+  weight × shared spending. Outlays are reported separately. Their balance is what
+  they paid (on accounts they own) minus their share, and the transfers that even
+  out the balances are "who owes whom".
 - **Closing a month** stores a `Settlement` snapshot, so later edits don't quietly
   change history.
 
@@ -118,10 +120,12 @@ categorized by hand.
 - **Budgets:** a target per category for every month, with optional overrides per
   month, for a household (against shared spending) or for yourself (against your
   own share: personal spending plus your weighted part of shared spending).
-- **Analysis endpoints** (plain SQL `GROUP BY`; no data warehouse needed at this scale):
-  - `GET /households/{id}/summary?month=`: spending by category against target, by member, settlement preview
-  - `GET /households/{id}/trends?from=&to=`: totals per month and category
-  - `GET /households/{id}/settlements`: history of closed months
+- **Analysis endpoints** (no data warehouse needed at this scale). Like budgets, they
+  work for yourself or, with `?household_id=`, for a household:
+  - `GET /summary?month=`: spending by category against target, the largest spending, last month's total
+  - `GET /trends?from=&to=`: totals per month and category
+  - `GET /households/{id}/settlement?month=`: per member and who owes whom (stored if the month is closed)
+  - `POST /households/{id}/settlements`, `GET` it for the history of closed months, `DELETE …/{month}` to reopen
 - **Dashboard:** month picker, spending against target per category (the existing
   target bar chart), a trend line, a "who owes whom" card, the largest transactions.
 
@@ -190,9 +194,12 @@ categorized by hand.
 - [x] Budgets per scope and category, every month or one month; target vs spent per month
 - [x] Budget and category management UI
 
-### Phase 4: Analysis and settlement
-- Summary and trend endpoints + dashboard
-- N-member settlement with split weights; closing a month
+### Phase 4: Analysis and settlement (branch `phase-4-analysis-settlement`)
+- [x] Summary and trend endpoints, for yourself or a household + dashboard (month
+      picker, spending against target, trend line, largest spending)
+- [x] Settlement per month: who paid (the account owner), balances, and the transfers
+      that settle them (`spending_core.settle_up`)
+- [x] Closing a month stores the settlement; history of closed months; owners can reopen
 
 ### Phase 5: Private beta (~10 users)
 - Invitations, onboarding (create household → add account → first import)

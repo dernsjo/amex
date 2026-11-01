@@ -53,6 +53,17 @@ store the category by name, so the same name adds up across scopes in "My view".
 - `/budgets?month=YYYY-MM`: targets (every month, or one month's override) against
   spending: shared spending for a household, your own share for you.
 
+## Analysis and settlement
+Spending is counted the same way everywhere (`app/analysis.py`): for a household,
+what's shared on its accounts; for you, your own share of everything you can see.
+- `/summary?month=YYYY-MM`: budget lines, the largest spending, last month's total.
+- `/trends?from=YYYY-MM&to=YYYY-MM`: spending per month and category (at most 36 months).
+- `/households/{id}/settlement?month=`: each member's share, what they paid (spending
+  on accounts they own) and their balance, plus the transfers that even it out.
+- `POST /households/{id}/settlements` closes a month: its settlement is stored and
+  answered from then on, so later edits don't change it. `GET` lists closed months;
+  an owner can reopen one with `DELETE /households/{id}/settlements/{month}`.
+
 ## Run
 ```bash
 fastapi dev app/main.py     # auto-reload, http://localhost:8000
