@@ -1,7 +1,7 @@
 import axios from "axios";
 import { supabase } from "./supabase";
 
-const api = axios.create({
+export const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000",
 });
 
@@ -191,7 +191,15 @@ export const addMonths = (month: string, delta: number) => {
 };
 
 export const monthName = (month: string) =>
-    new Date(`${month}-01T00:00:00`).toLocaleDateString("sv-SE", { month: "long", year: "numeric" });
+    new Date(`${month}-01T00:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+
+/** A YYYY-MM month as a short name, e.g. "Nov". */
+export const monthShort = (month: string) =>
+    new Date(`${month}-01T00:00:00`).toLocaleDateString("en-GB", { month: "short" });
+
+/** An ISO date as e.g. "4 Nov". */
+export const dayName = (iso: string) =>
+    new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 /** Format öre as kronor. */
 export const kr = (minor: number, currency = "SEK") =>

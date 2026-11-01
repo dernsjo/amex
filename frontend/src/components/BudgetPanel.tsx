@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, getBudgets, kr, monthName, setBudget } from "../api";
 import type { BudgetLine, BudgetMonth, Transaction } from "../api";
+import { MonthStepper, Segmented, ShareBar } from "./ui";
 
 interface Props {
     householdId: number | null; // null: your own budget
     month: string; // YYYY-MM
+    onMonthChange: (month: string) => void;
     transactions: Transaction[]; // only to know when spending changed
     categoriesVersion: number; // bumped when categories change
 }
@@ -15,24 +17,18 @@ interface Draft {
     onlyThisMonth: boolean;
 }
 
-const Bar = ({ spent, target }: { spent: number; target: number | null }) => {
-    if (!target) return null;
-    const ratio = Math.max(0, spent / target);
-    return (
-        <div style={{ width: "100%", background: "#eee", height: "8px" }}>
-            <div
-                style={{
-                    width: `${Math.min(ratio, 1) * 100}%`,
-                    height: "100%",
-                    background: ratio > 1 ? "#c0392b" : "#27ae60",
-                }}
-            />
-        </div>
-    );
-};
+/** Spent against target as the motif: spent in ink, what's left in grey, anything over in the accent. */
+const budgetParts = (spent: number, target: number | null) =>
+    target
+        ? [
+              { value: Math.min(spent, target), className: "spent" },
+              { value: Math.max(0, target - spent), className: "rest" },
+              { value: Math.max(0, spent - target), className: "over" },
+          ]
+        : [{ value: Math.max(spent, 1), className: "rest" }];
 
 /** Each category's target against spending for one month. */
-const BudgetPanel = ({ householdId, month, transactions, categoriesVersion }: Props) => {
+const BudgetPanel = ({ householdId, month, onMonthChange, transactions, categoriesVersion }: Props) => {
     const [budget, setBudgetMonth] = useState<BudgetMonth | null>(null);
     const [draft, setDraft] = useState<Draft | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -78,90 +74,122 @@ const BudgetPanel = ({ householdId, month, transactions, categoriesVersion }: Pr
         });
     };
 
+    const left = budget ? budget.target_minor - budget.spent_minor : 0;
+
     return (
-        <div>
-            <h3>{householdId ? "Shared budget" : "My budget"}</h3>
-            <p>
-                {householdId
-                    ? "Spending marked shared on the household's accounts."
-                    : "Your own share: your personal spending plus your part of each household's shared spending."}
-            </p>
-            {error && <p role="alert">{error}</p>}
+        <div className="view">
+            <div className="view-head">
+                <div>
+                    <h1 className="head">{householdId ? "Shared budget" : "Your budget"}</h1>
+                    <p>
+                        {householdId
+                            ? "Spending marked shared on the household's accounts."
+                            : "Your own share: your personal spending plus your part of each household's shared spending."}
+                    </p>
+                </div>
+                <MonthStepper month={month} onChange={onMonthChange} />
+            </div>
+
+            {error && (
+                <p role="alert" className="alert">
+                    {error}
+                </p>
+            )}
+
             {budget && (
-                <table border={1} style={{ width: "100%", borderCollapse: "collapse", marginTop: "8px" }}>
-                    <thead>
-                        <tr>
-                            <th>Category</th>
-                            <th>Target</th>
-                            <th>Spent</th>
-                            <th>Left</th>
-                            <th style={{ width: "30%" }} />
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {budget.lines.map((line) => {
-                            const editing = draft?.category === line.category ? draft : null;
-                            return (
-                                <tr key={line.category}>
-                                    <td>{line.category}</td>
-                                    <td>
-                                        {editing ? (
-                                            <>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="100"
-                                                    placeholder="No target"
-                                                    value={editing.amount}
-                                                    onChange={(e) => setDraft({ ...editing, amount: e.target.value })}
-                                                    style={{ width: "7em" }}
-                                                />
-                                                <select
-                                                    value={editing.onlyThisMonth ? "month" : "every"}
-                                                    onChange={(e) =>
-                                                        setDraft({ ...editing, onlyThisMonth: e.target.value === "month" })
-                                                    }
-                                                >
-                                                    <option value="every">every month</option>
-                                                    <option value="month">only {monthName(month)}</option>
-                                                </select>
-                                                <button onClick={() => handleSave(line)}>Save</button>
-                                                <button onClick={() => setDraft(null)}>Cancel</button>
-                                            </>
-                                        ) : (
-                                            <span style={{ cursor: "pointer" }} onClick={() => startEditing(line)}>
-                                                {line.target_minor === null ? "Set target" : kr(line.target_minor)}
-                                                {line.override_minor !== null && " (this month)"}
-                                            </span>
-                                        )}
-                                        {!editing && line.override_minor !== null && (
-                                            <button
-                                                title="Go back to the target for every month"
-                                                onClick={() => save(() => setBudget(householdId, line.category, month, null))}
-                                            >
-                                                Reset
+                <>
+                    <section className="total tile tile-3 rise" aria-label="Total">
+                        <p className="total-figure">{budget.target_minor > 0 ? kr(Math.abs(left)) : kr(budget.spent_minor)}</p>
+                        <p className="total-meta">
+                            {budget.target_minor === 0
+                                ? `spent in ${monthName(month)}, with no targets set yet`
+                                : left >= 0
+                                  ? `left of ${kr(budget.target_minor)} for ${monthName(month)}`
+                                  : `over a budget of ${kr(budget.target_minor)}`}
+                        </p>
+                        {budget.target_minor > 0 && (
+                            <ShareBar className="grow-x" parts={budgetParts(budget.spent_minor, budget.target_minor)} />
+                        )}
+                    </section>
+
+                    <section className="block">
+                        <div className="block-head">
+                            <h2>By category</h2>
+                            <span className="small muted">Choose a target to change it</span>
+                        </div>
+                        <ul className="budget">
+                            {budget.lines.map((line, i) => {
+                                const editing = draft?.category === line.category ? draft : null;
+                                const lineLeft = line.target_minor === null ? null : line.target_minor - line.spent_minor;
+                                return (
+                                    <li key={line.category} className="budget-row rise" style={{ ["--i" as string]: Math.min(i, 10) }}>
+                                        <span className="cat">{line.category}</span>
+                                        <ShareBar parts={budgetParts(line.spent_minor, line.target_minor)} />
+                                        <span className="fig">
+                                            {kr(line.spent_minor)} of{" "}
+                                            <button className="target-btn" onClick={() => startEditing(line)}>
+                                                {line.target_minor === null ? "no target" : kr(line.target_minor)}
                                             </button>
+                                            {line.override_minor !== null && <span className="muted"> this month</span>}
+                                        </span>
+                                        <span className={`fig${lineLeft !== null && lineLeft < 0 ? " left-over" : ""}`}>
+                                            {lineLeft === null ? "" : lineLeft >= 0 ? `${kr(lineLeft)} left` : `${kr(-lineLeft)} over`}
+                                        </span>
+                                        {editing && (
+                                            <form
+                                                className="budget-edit"
+                                                onSubmit={(e) => {
+                                                    e.preventDefault();
+                                                    handleSave(line);
+                                                }}
+                                            >
+                                                <label className="field">
+                                                    <span>Target in kronor</span>
+                                                    <input
+                                                        className="input"
+                                                        type="number"
+                                                        min="0"
+                                                        step="100"
+                                                        placeholder="No target"
+                                                        value={editing.amount}
+                                                        onChange={(e) => setDraft({ ...editing, amount: e.target.value })}
+                                                        autoFocus
+                                                    />
+                                                </label>
+                                                <Segmented
+                                                    label="Applies to"
+                                                    value={editing.onlyThisMonth ? "month" : "every"}
+                                                    onChange={(v) => setDraft({ ...editing, onlyThisMonth: v === "month" })}
+                                                    options={[
+                                                        { value: "every", label: "Every month" },
+                                                        { value: "month", label: `Only ${monthName(month)}` },
+                                                    ]}
+                                                />
+                                                <div className="edit-actions">
+                                                    <button type="submit" className="btn btn-ink btn-small">
+                                                        Save
+                                                    </button>
+                                                    <button type="button" className="btn btn-small" onClick={() => setDraft(null)}>
+                                                        Cancel
+                                                    </button>
+                                                    {line.override_minor !== null && (
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-small"
+                                                            onClick={() => save(() => setBudget(householdId, line.category, month, null))}
+                                                        >
+                                                            Back to every month's target
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </form>
                                         )}
-                                    </td>
-                                    <td>{kr(line.spent_minor)}</td>
-                                    <td>{line.target_minor === null ? "" : kr(line.target_minor - line.spent_minor)}</td>
-                                    <td>
-                                        <Bar spent={line.spent_minor} target={line.target_minor} />
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>Total</th>
-                            <th>{kr(budget.target_minor)}</th>
-                            <th>{kr(budget.spent_minor)}</th>
-                            <th>{kr(budget.target_minor - budget.spent_minor)}</th>
-                            <th />
-                        </tr>
-                    </tfoot>
-                </table>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </section>
+                </>
             )}
         </div>
     );

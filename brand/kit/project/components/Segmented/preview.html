@@ -1,0 +1,27 @@
+<!-- @dsCard group="Actions" height=140 subtitle="A choice made of shares" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Segmented</title></head>
+<body>
+<div class="kv-pad">
+  <div class="field"><span>How it's split</span>
+    <div class="segmented" role="group" aria-label="Allocation" id="seg">
+      <button type="button" aria-pressed="true">Shared</button>
+      <button type="button" aria-pressed="false">Personal</button>
+      <button type="button" aria-pressed="false">Outlay</button>
+      <button type="button" aria-pressed="false">Excluded</button>
+    </div>
+    <span id="hint" style="font-weight:400;color:var(--ink)">Split between the household by its weights.</span>
+  </div>
+</div>
+<script>
+  var hints = { Shared: "Split between the household by its weights.", Personal: "Belongs to one person.", Outlay: "Paid on someone's behalf; reported separately.", Excluded: "Not spending: transfers, refunds, payments to the card." };
+  document.querySelectorAll('#seg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#seg button').forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+      document.getElementById('hint').textContent = hints[b.textContent];
+    });
+  });
+</script>
+</body>
+</html>

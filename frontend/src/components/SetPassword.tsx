@@ -25,33 +25,45 @@ const SetPassword = ({ onDone, onCancel }: Props) => {
     };
 
     return (
-        <form onSubmit={handleSubmit} style={{ display: "inline-flex", flexDirection: "column", gap: 8 }}>
-            <input
-                type="password"
-                placeholder="New password"
-                autoComplete="new-password"
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-            />
-            <input
-                type="password"
-                placeholder="Repeat it"
-                autoComplete="new-password"
-                value={repeat}
-                onChange={(e) => setRepeat(e.target.value)}
-                required
-            />
-            <span>
-                <button type="submit">Save password</button>{" "}
+        <form onSubmit={handleSubmit} style={{ display: "grid", gap: "0.85rem", maxWidth: "26rem" }}>
+            <label className="field">
+                <span>New password, at least 8 characters</span>
+                <input
+                    className="input"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                />
+            </label>
+            <label className="field">
+                <span>Repeat it</span>
+                <input
+                    className="input"
+                    type="password"
+                    autoComplete="new-password"
+                    value={repeat}
+                    onChange={(e) => setRepeat(e.target.value)}
+                    required
+                />
+            </label>
+            <div className="edit-actions">
+                <button type="submit" className="btn btn-primary">
+                    Save password
+                </button>
                 {onCancel && (
-                    <button type="button" onClick={onCancel}>
+                    <button type="button" className="btn" onClick={onCancel}>
                         Cancel
                     </button>
                 )}
-            </span>
-            {error && <p role="alert">{error}</p>}
+            </div>
+            {error && (
+                <p role="alert" className="alert">
+                    {error}
+                </p>
+            )}
         </form>
     );
 };

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { createAccount, deleteAccount, errorMessage, updateAccount } from "../api";
 import type { Account, Me } from "../api";
+import { useDialogs } from "./ui";
 
 interface Props {
     me: Me;
@@ -13,11 +14,12 @@ interface Props {
 const toHouseholdId = (value: string) => (value ? Number(value) : null);
 
 const AccountPanel = ({ me, accounts, onChanged }: Props) => {
+    const dialogs = useDialogs();
     const [name, setName] = useState("");
     const [shareWith, setShareWith] = useState("");
     const [error, setError] = useState<string | null>(null);
 
-    const householdName = (id: number | null) => me.households.find((h) => h.id === id)?.name ?? "—";
+    const householdName = (id: number | null) => me.households.find((h) => h.id === id)?.name ?? "Not shared";
 
     const run = async (action: () => Promise<unknown>) => {
         setError(null);
@@ -37,12 +39,13 @@ const AccountPanel = ({ me, accounts, onChanged }: Props) => {
         });
     };
 
-    const handleDelete = (account: Account) => {
-        if (window.confirm(`Delete ${account.name} and all its transactions?`)) run(() => deleteAccount(account.id));
+    const handleDelete = async (account: Account) => {
+        if (await dialogs.confirm(`Delete ${account.name}?`, "All its imports and transactions are deleted too.", "Delete account"))
+            run(() => deleteAccount(account.id));
     };
 
-    const householdSelect = (value: string, onChange: (value: string) => void) => (
-        <select value={value} onChange={(e) => onChange(e.target.value)}>
+    const householdSelect = (value: string, onChange: (value: string) => void, label: string) => (
+        <select className="select select-small" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
             <option value="">Not shared</option>
             {me.households.map((h) => (
                 <option key={h.id} value={h.id}>
@@ -53,52 +56,90 @@ const AccountPanel = ({ me, accounts, onChanged }: Props) => {
     );
 
     return (
-        <div>
-            <h2>Accounts</h2>
-            {accounts.length > 0 && (
-                <table border={1} style={{ margin: "0 auto", borderCollapse: "collapse" }}>
-                    <thead>
-                        <tr>
-                            <th>Account</th>
-                            <th>Owner</th>
-                            <th>Sharing</th>
-                            <th />
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {accounts.map((a) => {
-                            const mine = a.owner.user_id === me.id;
-                            return (
-                                <tr key={a.id}>
-                                    <td>{a.name}</td>
-                                    <td>{mine ? "You" : a.owner.display_name}</td>
-                                    <td>
-                                        {mine
-                                            ? householdSelect(String(a.household_id ?? ""), (v) =>
-                                                  run(() => updateAccount(a.id, { household_id: toHouseholdId(v) })),
-                                              )
-                                            : householdName(a.household_id)}
-                                    </td>
-                                    <td>{mine && <button onClick={() => handleDelete(a)}>Delete</button>}</td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+        <section className="block">
+            <div className="block-head">
+                <h2>Accounts</h2>
+                <span className="small muted">Sharing an account into a household splits its spending there</span>
+            </div>
+            {error && (
+                <p role="alert" className="alert">
+                    {error}
+                </p>
             )}
-            <form onSubmit={handleCreate}>
-                <input
-                    type="text"
-                    placeholder="New account, e.g. Amex"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                />
-                {me.households.length > 0 && householdSelect(shareWith, setShareWith)}
-                <button type="submit">Add account</button>
+            {accounts.length > 0 && (
+                <div className="table-wrap">
+                    <table className="table table-stack">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Owner</th>
+                                <th>Sharing</th>
+                                <th />
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {accounts.map((a) => {
+                                const mine = a.owner.user_id === me.id;
+                                return (
+                                    <tr key={a.id}>
+                                        <td className="cell-desc">{a.name}</td>
+                                        <td data-label="Owner">{mine ? "You" : a.owner.display_name}</td>
+                                        <td style={{ minWidth: "14rem" }}>
+                                            {mine
+                                                ? householdSelect(
+                                                      String(a.household_id ?? ""),
+                                                      (v) => run(() => updateAccount(a.id, { household_id: toHouseholdId(v) })),
+                                                      `Sharing for ${a.name}`,
+                                                  )
+                                                : householdName(a.household_id)}
+                                        </td>
+                                        <td className="num">
+                                            {mine && (
+                                                <button className="btn btn-small" onClick={() => handleDelete(a)}>
+                                                    Delete
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            <form onSubmit={handleCreate} className="panel">
+                <p className="lead">Add an account</p>
+                <div className="row">
+                    <label className="field grow">
+                        <span>Name</span>
+                        <input
+                            className="input"
+                            type="text"
+                            placeholder="e.g. Amex Gold"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                        />
+                    </label>
+                    {me.households.length > 0 && (
+                        <label className="field grow">
+                            <span>Sharing</span>
+                            <select className="select" value={shareWith} onChange={(e) => setShareWith(e.target.value)}>
+                                <option value="">Not shared</option>
+                                {me.households.map((h) => (
+                                    <option key={h.id} value={h.id}>
+                                        Shared with {h.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    )}
+                    <button type="submit" className="btn btn-ink">
+                        Add account
+                    </button>
+                </div>
             </form>
-            {error && <p role="alert">{error}</p>}
-        </div>
+        </section>
     );
 };
 

@@ -1,0 +1,39 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": { "v": 1, "at": "2026-11-01T15:30:00Z" },
+  "title": "Leva",
+  "namespace": "Leva",
+  "libraries": [],
+  "sections": {},
+  "groups": ["Logos"],
+  "assetGroups": {
+    "Logos": {
+      "name": "Logos",
+      "tile": "l",
+      "order": [
+        "leva-lockup.svg",
+        "leva-lockup-on-dark.svg",
+        "leva-mark.svg",
+        "leva-mark-on-dark.svg",
+        "leva-mark-mono-ink.svg",
+        "leva-wordmark.svg",
+        "leva-wordmark-on-dark.svg",
+        "leva-app-icon.svg"
+      ],
+      "files": {
+        "leva-lockup.svg": { "name": "leva-lockup.svg", "blob": "4a01b6332f0751c8dd56d4c1a21a7f2e", "size": 1225, "type": "image/svg+xml" },
+        "leva-lockup-on-dark.svg": { "name": "leva-lockup-on-dark.svg", "blob": "2a958c6b710079a4a58c644e96963a95", "size": 1225, "type": "image/svg+xml" },
+        "leva-mark.svg": { "name": "leva-mark.svg", "blob": "3eb15c37a4a8a7b7106f18bbf79b70df", "size": 236, "type": "image/svg+xml" },
+        "leva-mark-on-dark.svg": { "name": "leva-mark-on-dark.svg", "blob": "90931ea2aa16d1e8f17512008f7e2ee4", "size": 236, "type": "image/svg+xml" },
+        "leva-mark-mono-ink.svg": { "name": "leva-mark-mono-ink.svg", "blob": "15e922af1e2f9969cb78dc53775665ee", "size": 236, "type": "image/svg+xml" },
+        "leva-wordmark.svg": { "name": "leva-wordmark.svg", "blob": "1808a900cdf5b0d2460a2d65e27c7be0", "size": 1076, "type": "image/svg+xml" },
+        "leva-wordmark-on-dark.svg": { "name": "leva-wordmark-on-dark.svg", "blob": "5a4f1b03069db71921cd2db55373101e", "size": 1076, "type": "image/svg+xml" },
+        "leva-app-icon.svg": { "name": "leva-app-icon.svg", "blob": "a4c71fdf032e596db93cbe7804271e4c", "size": 303, "type": "image/svg+xml" }
+      }
+    }
+  },
+  "blobs": {},
+  "docs": { "readme": "project/README.md", "sections": [] },
+  "lastChange": { "by": "Axel Dernsjö", "at": "2026-11-01T16:45:00Z", "via": "Claude Code", "note": "Renamed Kvitt to Leva: new logos, broader positioning, AI and connector voice rules." }
+}
