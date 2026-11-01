@@ -1,0 +1,54 @@
+/* Leva components — plain CSS classes, the same names the app uses (frontend/src/styles.css). */
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); font-size: 19px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.kv-pad { padding: 20px; display: grid; gap: 16px; align-content: start; }
+.kv-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+
+/* Button: square, flat, one fill. */
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border: 0; border-radius: var(--radius-none); background: var(--surface); color: var(--ink); font: 500 17px/1 var(--font-sans); cursor: pointer; transition: transform 140ms cubic-bezier(.22,1,.36,1), background-color 180ms ease; }
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:active:not(:disabled) { transform: scale(.97); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-press); }
+.btn-ink { background: var(--ink); color: var(--bg); }
+.btn-ink:hover:not(:disabled) { background: var(--muted); }
+.btn-small { min-height: 36px; padding: 0 14px; font-size: 14px; }
+
+/* Share: parts of a whole cut by the 4px gap. */
+.share { display: flex; gap: var(--space-share); width: 100%; height: var(--share-h, 20px); }
+.share > span { display: flex; align-items: end; min-width: 2px; padding: 0; overflow: hidden; white-space: nowrap; font-size: 14px; font-weight: 600; color: #fff; }
+.share.labelled > span { padding: 6px 9px; }
+.share .spent { background: var(--ink); }
+.share .rest { background: var(--surface-2); }
+.share .over { background: var(--accent); }
+
+/* Segmented control: a choice made of shares. */
+.segmented { display: inline-flex; flex-wrap: wrap; gap: var(--space-share); }
+.segmented button { min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--radius-none); background: var(--surface); color: var(--ink); font: 500 14px/1 var(--font-sans); cursor: pointer; transition: background-color 180ms ease, transform 140ms cubic-bezier(.22,1,.36,1); }
+.segmented button:hover:not([aria-pressed="true"]) { background: var(--surface-2); }
+.segmented button:active { transform: scale(.96); }
+.segmented button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Allocation tag: a small filled block; the word is always there. */
+.tag { display: inline-flex; align-items: center; padding: 2px 9px; font: 500 14px/1.45 var(--font-sans); background: var(--surface-2); color: var(--ink); white-space: nowrap; }
+.tag-shared { background: var(--field-1); color: var(--on-field); }
+.tag-personal { background: var(--field-2); color: var(--on-field); }
+.tag-outlay { background: var(--field-3); color: var(--on-field); }
+.tag-excluded { background: transparent; color: var(--muted); text-decoration: line-through; }
+
+/* Field: real inputs keep their line. */
+.field { display: grid; gap: 6px; font: 500 14px/1.45 var(--font-sans); }
+.field > span { color: var(--muted); }
+.input { min-height: 44px; padding: 0 14px; background: var(--bg); color: var(--ink); border: 1.5px solid var(--line); border-radius: var(--radius-none); font: 400 17px/1 var(--font-sans); width: 100%; box-sizing: border-box; }
+.input:hover { border-color: var(--muted); }
+.input:focus-visible { outline: none; border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+
+/* Tile: a flat field carrying one statement. */
+.tile { padding: 24px; display: grid; gap: 12px; color: var(--on-field); }
+.tile-1 { background: var(--field-1); }
+.tile-2 { background: var(--field-2); }
+.tile-3 { background: var(--field-3); }
+.tile .share .rest { background: var(--bg); }
+.tile .share .spent { background: var(--on-field); }

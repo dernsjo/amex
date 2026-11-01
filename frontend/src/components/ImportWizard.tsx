@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { confirmImport, errorMessage, getImports, kr, previewImport, undoImport } from "../api";
+import { confirmImport, dayName, errorMessage, getImports, kr, previewImport, undoImport } from "../api";
 import type { Account, ImportConfig, ImportPreview, ImportResult } from "../api";
-import AccountSelect from "./AccountSelect";
 import MappingForm from "./MappingForm";
 import type { MappingDraft } from "./MappingForm";
+import { Segmented, useDialogs } from "./ui";
 
 interface Props {
     accounts: Account[]; // the user's own accounts
     onImported: () => Promise<void>;
+    onAddAccount: () => void;
 }
 
 const SOURCE_TEXT: Record<ImportPreview["source"], string> = {
@@ -25,7 +26,8 @@ const PREVIEW_ROWS = 50;
 const isComplete = (m: MappingDraft) => Boolean(m.date_column && m.description_column && m.amount_column);
 
 /** Upload → preview (and fix the column mapping if needed) → confirm. */
-const ImportWizard = ({ accounts, onImported }: Props) => {
+const ImportWizard = ({ accounts, onImported, onAddAccount }: Props) => {
+    const dialogs = useDialogs();
     const [accountId, setAccountId] = useState<number | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -132,7 +134,8 @@ const ImportWizard = ({ accounts, onImported }: Props) => {
 
     const handleUndo = async (imp: ImportResult) => {
         if (selected === null) return;
-        if (!window.confirm(`Remove ${imp.filename} and its ${imp.transaction_count} transactions?`)) return;
+        const ok = await dialogs.confirm(`Undo ${imp.filename}?`, `Its ${imp.transaction_count} transactions are removed.`, "Undo import");
+        if (!ok) return;
         try {
             await undoImport(selected, imp.id);
             await Promise.all([fetchHistory(), onImported()]);
@@ -147,129 +150,219 @@ const ImportWizard = ({ accounts, onImported }: Props) => {
         handleFile(e.dataTransfer.files);
     };
 
-    if (accounts.length === 0) return <p>Add an account to import transactions.</p>;
+    const head = (
+        <div className="view-head">
+            <div>
+                <h1 className="head">Import</h1>
+                <p>Bring in a bank or card statement as a CSV export. Nothing is saved until you confirm.</p>
+            </div>
+        </div>
+    );
+
+    if (accounts.length === 0)
+        return (
+            <div className="view">
+                {head}
+                <div className="empty">
+                    <p className="lead">Statements belong to an account.</p>
+                    <p>Add the card or bank account first, then import its exports here.</p>
+                    <button className="btn btn-primary" onClick={onAddAccount}>
+                        Add an account
+                    </button>
+                </div>
+            </div>
+        );
+
+    const account = accounts.find((a) => a.id === selected);
 
     return (
-        <div style={{ padding: "20px", border: "2px dashed gray", borderRadius: "10px" }}>
-            <h2>Import</h2>
-            <AccountSelect
-                accounts={accounts}
-                value={selected}
-                onChange={(id) => {
-                    setAccountId(id);
-                    reset();
-                }}
-            />
+        <div className="view">
+            {head}
+
+            <section className="block">
+                <div className="block-head">
+                    <h2>Into which account?</h2>
+                </div>
+                <Segmented
+                    label="Account"
+                    value={String(selected ?? "")}
+                    onChange={(id) => {
+                        setAccountId(Number(id));
+                        reset();
+                    }}
+                    options={accounts.map((a) => ({ value: String(a.id), label: a.name }))}
+                />
+            </section>
+
+            {message && (
+                <p role="status" className="status">
+                    {message}
+                </p>
+            )}
 
             {!preview && (
                 <div
+                    className={`drop rise${isDragging ? " dragging" : ""}`}
                     onDragOver={(e) => {
                         e.preventDefault();
                         setIsDragging(true);
                     }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
                 >
+                    <div className="drop-motif" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                    </div>
                     <input
                         type="file"
                         ref={fileInputRef}
-                        style={{ display: "none" }}
+                        className="sr-only"
                         accept=".csv"
+                        tabIndex={-1}
                         onChange={(e) => handleFile(e.target.files)}
                     />
-                    <p>{isDragging ? "Drop the file here..." : "Drag & drop a bank CSV export here or click to select one"}</p>
-                    <button onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                        {busy ? "Reading..." : "Select CSV File"}
+                    <p className="head">
+                        {isDragging ? "Let go to read it." : `Drop a statement for ${account?.name ?? "this account"}.`}
+                    </p>
+                    <p>
+                        {account?.import_config
+                            ? "It will be read the same way as the last one."
+                            : "Amex exports are recognized; any other bank's CSV can be mapped column by column."}
+                    </p>
+                    <button
+                        type="button"
+                        className="btn btn-ink"
+                        disabled={busy}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            fileInputRef.current?.click();
+                        }}
+                    >
+                        {busy ? "Reading…" : "Choose a CSV file"}
                     </button>
                 </div>
             )}
 
             {preview && (
-                <div>
-                    <p>
-                        <strong>{preview.filename}</strong>: {SOURCE_TEXT[preview.source]}
-                    </p>
+                <section className="block">
+                    <div className="block-head">
+                        <h2>{preview.filename}</h2>
+                        <span className="small muted">{SOURCE_TEXT[preview.source]}</span>
+                    </div>
                     {preview.already_imported_at && (
-                        <p role="status">
+                        <p role="status" className="alert">
                             This exact file was already imported on{" "}
-                            {new Date(preview.already_imported_at).toLocaleDateString("sv-SE")}.
+                            {new Date(preview.already_imported_at).toLocaleDateString("en-GB")}.
                         </p>
                     )}
-                    <label>
-                        Read as{" "}
-                        <select value={importer} onChange={(e) => handleImporter(e.target.value)}>
-                            {preview.importers.map((i) => (
-                                <option key={i.id} value={i.id}>
-                                    {i.name}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    {importer === "csv" && mapping && (
-                        <MappingForm preview={preview} mapping={mapping} onChange={handleMapping} />
+                    <div className="panel">
+                        <label className="field" style={{ maxWidth: "22rem" }}>
+                            <span>Read as</span>
+                            <select className="select" value={importer} onChange={(e) => handleImporter(e.target.value)}>
+                                {preview.importers.map((i) => (
+                                    <option key={i.id} value={i.id}>
+                                        {i.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        {importer === "csv" && mapping && (
+                            <MappingForm preview={preview} mapping={mapping} onChange={handleMapping} />
+                        )}
+                    </div>
+                    {preview.error && (
+                        <p role="alert" className="alert">
+                            {preview.error}
+                        </p>
                     )}
-                    {preview.error && <p role="alert">{preview.error}</p>}
+
+                    <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                        <p className="lead">
+                            {preview.new_count} new
+                            {preview.duplicate_count > 0 && (
+                                <span className="muted"> · {preview.duplicate_count} already imported, skipped</span>
+                            )}
+                        </p>
+                        <div className="edit-actions">
+                            <button className="btn" onClick={reset} disabled={busy}>
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleConfirm}
+                                disabled={busy || !!preview.error || preview.new_count === 0 || !currentConfig()}
+                            >
+                                Import {preview.new_count} transactions
+                            </button>
+                        </div>
+                    </div>
 
                     {preview.transactions.length > 0 && (
-                        <>
-                            <p>
-                                {preview.new_count} new
-                                {preview.duplicate_count > 0 && `, ${preview.duplicate_count} already imported (skipped)`}
-                            </p>
-                            <table border={1} style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <div className="table-wrap">
+                            <table className="table">
                                 <thead>
                                     <tr>
                                         <th>Date</th>
                                         <th>Description</th>
                                         <th>Category</th>
-                                        <th>Amount</th>
+                                        <th className="num">Amount</th>
                                         <th />
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {preview.transactions.slice(0, PREVIEW_ROWS).map((t, i) => (
-                                        <tr key={i} style={t.duplicate ? { opacity: 0.5 } : undefined}>
-                                            <td>{t.booked_on}</td>
-                                            <td>{t.description}</td>
+                                        <tr key={i} className={t.duplicate ? "dim" : undefined}>
+                                            <td className="cell-date">{dayName(t.booked_on)}</td>
+                                            <td className="cell-desc">{t.description}</td>
                                             <td>{t.category}</td>
-                                            <td style={{ textAlign: "right" }}>{kr(t.amount_minor)}</td>
-                                            <td>{t.duplicate ? "already imported" : "new"}</td>
+                                            <td className="num">{kr(t.amount_minor)}</td>
+                                            <td className="num">
+                                                {t.duplicate ? (
+                                                    <span className="small">Already imported</span>
+                                                ) : (
+                                                    <span className="tag tag-personal">New</span>
+                                                )}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
-                            {preview.transactions.length > PREVIEW_ROWS && (
-                                <p>…and {preview.transactions.length - PREVIEW_ROWS} more</p>
-                            )}
-                        </>
+                        </div>
                     )}
-
-                    <button
-                        onClick={handleConfirm}
-                        disabled={busy || !!preview.error || preview.new_count === 0 || !currentConfig()}
-                    >
-                        Import {preview.new_count} transactions
-                    </button>
-                    <button onClick={reset} disabled={busy}>
-                        Cancel
-                    </button>
-                </div>
+                    {preview.transactions.length > PREVIEW_ROWS && (
+                        <p className="muted">…and {preview.transactions.length - PREVIEW_ROWS} more</p>
+                    )}
+                </section>
             )}
 
-            {message && <p role="status">{message}</p>}
-
             {history.length > 0 && (
-                <details>
-                    <summary>Previous imports ({history.length})</summary>
-                    <ul style={{ listStyle: "none", padding: 0 }}>
+                <section className="block">
+                    <div className="block-head">
+                        <h2>Imported into {account?.name}</h2>
+                    </div>
+                    <ul className="list">
                         {history.map((imp) => (
-                            <li key={imp.id}>
-                                {imp.filename}: {imp.period_start} – {imp.period_end}, {imp.transaction_count}{" "}
-                                transactions <button onClick={() => handleUndo(imp)}>Undo</button>
+                            <li key={imp.id} className="list-row">
+                                <span className="desc">{imp.filename}</span>
+                                <button className="link small" onClick={() => handleUndo(imp)}>
+                                    Undo
+                                </button>
+                                <span className="sub">
+                                    {imp.period_start && imp.period_end
+                                        ? `${dayName(imp.period_start)} – ${dayName(imp.period_end)} · `
+                                        : ""}
+                                    {imp.transaction_count} transactions
+                                    {imp.duplicate_count > 0 && `, ${imp.duplicate_count} skipped`}
+                                </span>
                             </li>
                         ))}
                     </ul>
-                </details>
+                </section>
             )}
         </div>
     );

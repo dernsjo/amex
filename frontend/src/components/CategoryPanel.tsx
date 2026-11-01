@@ -11,6 +11,7 @@ import {
     renameCategory,
 } from "../api";
 import type { Category, CategoryRule } from "../api";
+import { useDialogs } from "./ui";
 
 interface Props {
     householdId: number | null; // null: the categories of your own, unshared accounts
@@ -20,12 +21,13 @@ interface Props {
 
 /** A scope's categories and the rules that sort transactions into them. */
 const CategoryPanel = ({ householdId, scopeName, onChanged }: Props) => {
+    const dialogs = useDialogs();
     const [categories, setCategories] = useState<Category[]>([]);
     const [rules, setRules] = useState<CategoryRule[]>([]);
     const [newCategory, setNewCategory] = useState("");
     const [pattern, setPattern] = useState("");
     const [ruleCategory, setRuleCategory] = useState("");
-    const [message, setMessage] = useState<string | null>(null);
+    const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
     const fetchScope = useCallback(async () => {
         const [c, r] = await Promise.all([getCategories(householdId), getRules(householdId)]);
@@ -34,7 +36,7 @@ const CategoryPanel = ({ householdId, scopeName, onChanged }: Props) => {
     }, [householdId]);
 
     useEffect(() => {
-        fetchScope().catch((e) => setMessage(errorMessage(e)));
+        fetchScope().catch((e) => setMessage({ text: errorMessage(e), error: true }));
     }, [fetchScope]);
 
     const run = async (action: () => Promise<string | void>) => {
@@ -42,9 +44,9 @@ const CategoryPanel = ({ householdId, scopeName, onChanged }: Props) => {
         try {
             const done = await action();
             await Promise.all([fetchScope(), onChanged()]);
-            if (done) setMessage(done);
+            if (done) setMessage({ text: done, error: false });
         } catch (e) {
-            setMessage(errorMessage(e));
+            setMessage({ text: errorMessage(e), error: true });
         }
     };
 
@@ -56,18 +58,21 @@ const CategoryPanel = ({ householdId, scopeName, onChanged }: Props) => {
         });
     };
 
-    const handleRename = (c: Category) => {
-        const name = window.prompt(`Rename ${c.name} to`, c.name)?.trim();
+    const handleRename = async (c: Category) => {
+        const name = (await dialogs.prompt(`Rename ${c.name}`, "New name", c.name))?.trim();
         if (name && name !== c.name)
             run(async () => {
                 await renameCategory(householdId, c.id, name);
             });
     };
 
-    const handleDelete = (c: Category) => {
-        if (!window.confirm(`Delete ${c.name}? Its rules and budget go too, and its transactions are sorted again.`))
-            return;
-        run(() => deleteCategory(householdId, c.id));
+    const handleDelete = async (c: Category) => {
+        const ok = await dialogs.confirm(
+            `Delete ${c.name}?`,
+            "Its rules and budget go too, and its transactions are sorted again.",
+            "Delete category",
+        );
+        if (ok) run(() => deleteCategory(householdId, c.id));
     };
 
     const handleAddRule = (e: FormEvent) => {
@@ -76,66 +81,106 @@ const CategoryPanel = ({ householdId, scopeName, onChanged }: Props) => {
         run(async () => {
             const result = await createRule(householdId, pattern.trim(), category);
             setPattern("");
-            return `Rule added; ${result.recategorized} transaction(s) moved.`;
+            return `Rule added; ${result.recategorized} transaction(s) moved to ${category}.`;
         });
     };
 
     return (
-        <details>
-            <summary>Categories for {scopeName}</summary>
-            {message && <p role="status">{message}</p>}
-            <ul style={{ listStyle: "none", padding: 0 }}>
-                {categories.map((c) => (
-                    <li key={c.id}>
-                        {c.name} <button onClick={() => handleRename(c)}>Rename</button>
-                        {!c.is_fallback && <button onClick={() => handleDelete(c)}>Delete</button>}
-                    </li>
-                ))}
-            </ul>
-            <form onSubmit={handleAdd}>
-                <input
-                    placeholder="New category"
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    required
-                />
-                <button type="submit">Add category</button>
-            </form>
-
-            <h4>Rules</h4>
-            <p>
-                A description containing the text goes to the category. These come before the built-in keywords, and
-                the longest matching text wins. Categories you pick by hand are never changed.
-            </p>
-            {rules.length > 0 && (
-                <ul style={{ listStyle: "none", padding: 0 }}>
-                    {rules.map((r) => (
-                        <li key={r.id}>
-                            "{r.pattern}" → {r.category}{" "}
-                            <button onClick={() => run(() => deleteRule(householdId, r.id))}>Delete</button>
+        <div className="cols">
+            {message && (
+                <p role={message.error ? "alert" : "status"} className={message.error ? "alert" : "status"} style={{ gridColumn: "1 / -1" }}>
+                    {message.text}
+                </p>
+            )}
+            <section className="block span-5">
+                <div className="block-head">
+                    <h2>Categories</h2>
+                    <span className="small muted">For {scopeName}</span>
+                </div>
+                <ul className="chips">
+                    {categories.map((c) => (
+                        <li key={c.id} className="chip">
+                            {c.name}
+                            <button onClick={() => handleRename(c)} aria-label={`Rename ${c.name}`}>
+                                Rename
+                            </button>
+                            {!c.is_fallback && (
+                                <button onClick={() => handleDelete(c)} aria-label={`Delete ${c.name}`}>
+                                    Delete
+                                </button>
+                            )}
                         </li>
                     ))}
                 </ul>
-            )}
-            <form onSubmit={handleAddRule}>
-                <input
-                    placeholder="Text, e.g. ICA MAXI"
-                    value={pattern}
-                    onChange={(e) => setPattern(e.target.value)}
-                    minLength={2}
-                    required
-                />
-                →{" "}
-                <select value={ruleCategory} onChange={(e) => setRuleCategory(e.target.value)}>
-                    {categories.map((c) => (
-                        <option key={c.id} value={c.name}>
-                            {c.name}
-                        </option>
-                    ))}
-                </select>
-                <button type="submit">Add rule</button>
-            </form>
-        </details>
+                <form onSubmit={handleAdd} className="row">
+                    <label className="field grow">
+                        <span>New category</span>
+                        <input className="input" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} required />
+                    </label>
+                    <button type="submit" className="btn btn-ink">
+                        Add
+                    </button>
+                </form>
+            </section>
+
+            <section className="block span-7">
+                <div className="block-head">
+                    <h2>Rules</h2>
+                    <span className="small muted">The longest matching text wins</span>
+                </div>
+                <p>
+                    A description containing the text goes to the category. Your rules come before the built-in keywords,
+                    and categories you pick by hand are never changed.
+                </p>
+                {rules.length > 0 && (
+                    <ul className="list">
+                        {rules.map((r) => (
+                            <li key={r.id} className="rule">
+                                <span className="pattern">{r.pattern}</span>
+                                <span className="arrow" aria-hidden="true">
+                                    →
+                                </span>
+                                <span>
+                                    <span className="sr-only">goes to </span>
+                                    {r.category}
+                                </span>
+                                <button className="btn btn-small" onClick={() => run(() => deleteRule(householdId, r.id))}>
+                                    Delete
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+                <form onSubmit={handleAddRule} className="panel">
+                    <div className="row">
+                        <label className="field grow">
+                            <span>When the description contains</span>
+                            <input
+                                className="input"
+                                placeholder="e.g. ICA MAXI"
+                                value={pattern}
+                                onChange={(e) => setPattern(e.target.value)}
+                                minLength={2}
+                                required
+                            />
+                        </label>
+                        <label className="field grow">
+                            <span>Put it in</span>
+                            <select className="select" value={ruleCategory} onChange={(e) => setRuleCategory(e.target.value)}>
+                                {categories.map((c) => (
+                                    <option key={c.id} value={c.name}>
+                                        {c.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <button type="submit" className="btn btn-ink">
+                            Add rule
+                        </button>
+                    </div>
+                </form>
+            </section>
+        </div>
     );
 };
 

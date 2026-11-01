@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { ALLOCATIONS, createRule, deleteTransaction, errorMessage, kr, suggestPattern, updateTransaction } from "../api";
+import { Fragment, useState } from "react";
+import type { FormEvent } from "react";
+import { ALLOCATIONS, createRule, dayName, deleteTransaction, errorMessage, kr, suggestPattern, updateTransaction } from "../api";
 import type { Account, Allocation, Transaction, TransactionChanges } from "../api";
+import { Segmented } from "./ui";
 
 interface Props {
     me: number;
@@ -17,28 +19,35 @@ interface Draft {
     category: string;
 }
 
-interface Option {
-    value: string;
-    label: string;
+/** After a correction: offer to do the same for similar transactions from now on. */
+interface RuleOffer {
+    householdId: number | null;
+    pattern: string;
+    category: string;
 }
 
-/** The scope's categories, plus the current one if it isn't among them (e.g. from before the account was shared). */
-const categoryOptions = (names: string[], current: string): Option[] =>
-    (names.includes(current) ? names : [current, ...names]).map((c) => ({ value: c, label: c }));
+const ALLOCATION_LABEL: Record<Allocation, string> = {
+    shared: "Shared",
+    personal: "Personal",
+    outlay: "Outlay",
+    excluded: "Excluded",
+};
 
-const Select = ({ value, options, onChange }: { value: string; options: Option[]; onChange: (v: string) => void }) => (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map((option) => (
-            <option key={option.value} value={option.value}>
-                {option.label}
-            </option>
-        ))}
-    </select>
-);
+const ALLOCATION_HINT: Record<Allocation, string> = {
+    shared: "Split between the household by its weights.",
+    personal: "Belongs to one person.",
+    outlay: "Paid on someone's behalf; reported separately.",
+    excluded: "Not spending: transfers, refunds, payments to the card.",
+};
+
+/** The scope's categories, plus the current one if it isn't among them (e.g. from before the account was shared). */
+const categoryOptions = (names: string[], current: string) => (names.includes(current) ? names : [current, ...names]);
 
 function TransactionTable({ me, transactions, accounts, categoriesFor, fetchTransactions }: Props) {
-    // The row being edited; clicking its Category or Allocation cell starts editing.
+    // The row being edited; choosing a row starts editing it.
     const [draft, setDraft] = useState<Draft | null>(null);
+    const [offer, setOffer] = useState<RuleOffer | null>(null);
+    const [query, setQuery] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
@@ -46,21 +55,18 @@ function TransactionTable({ me, transactions, accounts, categoriesFor, fetchTran
     const personName = (t: Transaction) =>
         accountById.get(t.account_id)?.members.find((m) => m.user_id === t.member_id)?.display_name ?? "?";
 
-    const startEditing = (t: Transaction) => {
-        setDraft({ id: t.id, allocation: t.allocation, member_id: t.member_id, category: t.category ?? "Other" });
-    };
+    const needle = query.trim().toLowerCase();
+    const shown = needle
+        ? transactions.filter((t) =>
+              [t.description, t.category ?? "", accountById.get(t.account_id)?.name ?? ""].some((s) =>
+                  s.toLowerCase().includes(needle),
+              ),
+          )
+        : transactions;
 
-    /** After a correction, offer to do the same for similar transactions from now on. */
-    const offerRule = async (t: Transaction, category: string) => {
-        const pattern = window
-            .prompt(
-                `Always put transactions containing this text in ${category}? Edit the text, or cancel.`,
-                suggestPattern(t.description),
-            )
-            ?.trim();
-        if (!pattern) return;
-        const result = await createRule(accountById.get(t.account_id)?.household_id ?? null, pattern, category);
-        setMessage(`Rule added: "${result.rule.pattern}" → ${category}. ${result.recategorized} other transaction(s) moved.`);
+    const startEditing = (t: Transaction) => {
+        if (draft?.id === t.id) return;
+        setDraft({ id: t.id, allocation: t.allocation, member_id: t.member_id, category: t.category ?? "Other" });
     };
 
     const handleSave = async (t: Transaction) => {
@@ -70,17 +76,33 @@ function TransactionTable({ me, transactions, accounts, categoriesFor, fetchTran
         try {
             const changes: TransactionChanges = {
                 ...(draft.allocation !== t.allocation && { allocation: draft.allocation }),
-                ...(draft.allocation === "personal" &&
-                    draft.member_id !== t.member_id && { member_id: draft.member_id }),
+                ...(draft.allocation === "personal" && draft.member_id !== t.member_id && { member_id: draft.member_id }),
                 ...(draft.category !== t.category && { category: draft.category }),
             };
             if (Object.keys(changes).length > 0) {
                 await updateTransaction(t.id, changes);
-                setDraft(null);
-                if (changes.category) await offerRule(t, changes.category);
+                if (changes.category)
+                    setOffer({
+                        householdId: accountById.get(t.account_id)?.household_id ?? null,
+                        pattern: suggestPattern(t.description),
+                        category: changes.category,
+                    });
                 await fetchTransactions();
             }
             setDraft(null);
+        } catch (e) {
+            setError(errorMessage(e));
+        }
+    };
+
+    const handleRule = async (event: FormEvent) => {
+        event.preventDefault();
+        if (!offer?.pattern.trim()) return;
+        try {
+            const result = await createRule(offer.householdId, offer.pattern.trim(), offer.category);
+            setOffer(null);
+            setMessage(`Rule added: "${result.rule.pattern}" goes to ${offer.category}. ${result.recategorized} other transaction(s) moved.`);
+            await fetchTransactions();
         } catch (e) {
             setError(errorMessage(e));
         }
@@ -90,6 +112,7 @@ function TransactionTable({ me, transactions, accounts, categoriesFor, fetchTran
         setError(null);
         try {
             await deleteTransaction(transactionId);
+            setDraft(null);
             await fetchTransactions();
         } catch (e) {
             setError(errorMessage(e));
@@ -97,96 +120,181 @@ function TransactionTable({ me, transactions, accounts, categoriesFor, fetchTran
     };
 
     return (
-        <div>
-            <h3>Transactions</h3>
-            <p>Click a Category or Allocation value to edit it.</p>
-            {error && <p role="alert">{error}</p>}
-            {message && <p role="status">{message}</p>}
-            <table border={1} style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Description</th>
-                        <th>Account</th>
-                        <th>Category</th>
-                        <th>Amount</th>
-                        <th>Allocation</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {transactions.map((t) => {
-                        const editing = draft?.id === t.id ? draft : null;
-                        const account = accountById.get(t.account_id);
-                        const members = account?.members ?? [];
-                        return (
-                            <tr key={t.id}>
-                                <td>{t.booked_on}</td>
-                                <td>{t.description}</td>
-                                <td>{account?.name}</td>
-                                <td>
-                                    {editing ? (
-                                        <Select
-                                            value={editing.category}
-                                            options={categoryOptions(categoriesFor(account), editing.category)}
-                                            onChange={(category) => setDraft({ ...editing, category })}
-                                        />
-                                    ) : (
-                                        <span style={{ cursor: "pointer" }} onClick={() => startEditing(t)}>
-                                            {t.category ?? "—"}
-                                        </span>
-                                    )}
-                                </td>
-                                <td>{kr(t.amount_minor, t.currency)}</td>
-                                <td>
-                                    {editing ? (
-                                        <>
-                                            <Select
-                                                value={editing.allocation}
-                                                options={ALLOCATIONS.map((a) => ({ value: a, label: a }))}
-                                                onChange={(v) =>
-                                                    setDraft({
-                                                        ...editing,
-                                                        allocation: v as Allocation,
-                                                        member_id: editing.member_id ?? account?.owner.user_id ?? null,
-                                                    })
-                                                }
-                                            />
-                                            {editing.allocation === "personal" && members.length > 1 && (
-                                                <Select
-                                                    value={String(editing.member_id ?? "")}
-                                                    options={members.map((m) => ({
-                                                        value: String(m.user_id),
-                                                        label: m.display_name,
-                                                    }))}
-                                                    onChange={(v) => setDraft({ ...editing, member_id: Number(v) })}
-                                                />
-                                            )}
-                                        </>
-                                    ) : (
-                                        <span style={{ cursor: "pointer" }} onClick={() => startEditing(t)}>
-                                            {t.allocation === "personal" ? `personal: ${personName(t)}` : t.allocation}
-                                        </span>
-                                    )}
-                                </td>
-                                <td>
-                                    {editing ? (
-                                        <>
-                                            <button onClick={() => handleSave(t)}>Save</button>
-                                            <button onClick={() => setDraft(null)}>Cancel</button>
-                                        </>
-                                    ) : (
-                                        account?.owner.user_id === me && (
-                                            <button onClick={() => handleDelete(t.id)}>Delete</button>
-                                        )
-                                    )}
-                                </td>
+        <section className="block">
+            <div className="toolbar">
+                <input
+                    className="input"
+                    type="search"
+                    placeholder="Search descriptions, categories, accounts"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    aria-label="Search transactions"
+                />
+                <span className="small muted">
+                    {shown.length} of {transactions.length}
+                </span>
+            </div>
+
+            {error && (
+                <p role="alert" className="alert">
+                    {error}
+                </p>
+            )}
+            {message && (
+                <p role="status" className="status">
+                    {message}
+                </p>
+            )}
+            {offer && (
+                <form className="offer rise" onSubmit={handleRule}>
+                    <p style={{ fontWeight: 500 }}>Always put transactions like this in {offer.category}?</p>
+                    <div className="row">
+                        <label className="field grow">
+                            <span style={{ color: "var(--ink)" }}>When the description contains</span>
+                            <input
+                                className="input"
+                                value={offer.pattern}
+                                onChange={(e) => setOffer({ ...offer, pattern: e.target.value })}
+                                minLength={2}
+                                required
+                            />
+                        </label>
+                        <div className="edit-actions">
+                            <button type="submit" className="btn btn-ink">
+                                Make it a rule
+                            </button>
+                            <button type="button" className="btn" style={{ background: "var(--bg)" }} onClick={() => setOffer(null)}>
+                                Just this once
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            )}
+
+            {transactions.length === 0 ? (
+                <div className="empty">
+                    <p className="lead">No transactions yet.</p>
+                    <p>Import a statement, or add one by hand above.</p>
+                </div>
+            ) : (
+                <div className="table-wrap">
+                    <table className="table table-click table-txn">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th>Split</th>
+                                <th>Account</th>
+                                <th className="num">Amount</th>
                             </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        </div>
+                        </thead>
+                        <tbody>
+                            {shown.map((t) => {
+                                const editing = draft?.id === t.id ? draft : null;
+                                const account = accountById.get(t.account_id);
+                                const members = account?.members ?? [];
+                                return (
+                                    <Fragment key={t.id}>
+                                        <tr
+                                            className={editing ? "editing" : undefined}
+                                            onClick={() => startEditing(t)}
+                                            tabIndex={0}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" && !editing) startEditing(t);
+                                            }}
+                                            aria-expanded={!!editing}
+                                        >
+                                            <td className="cell-date">{dayName(t.booked_on)}</td>
+                                            <td className="cell-desc">{t.description}</td>
+                                            <td>{t.category ?? "Uncategorized"}</td>
+                                            <td>
+                                                <span className={`tag tag-${t.allocation}`}>
+                                                    {t.allocation === "personal" ? personName(t) : ALLOCATION_LABEL[t.allocation]}
+                                                </span>
+                                            </td>
+                                            <td className="cell-account">{account?.name}</td>
+                                            <td className={`num${t.amount_minor < 0 ? " amount-neg" : ""}`} style={{ fontWeight: 600 }}>
+                                                {kr(t.amount_minor, t.currency)}
+                                            </td>
+                                        </tr>
+                                        {editing && (
+                                            <tr className="edit-panel">
+                                                <td colSpan={6}>
+                                                    <div className="edit-grid">
+                                                        <label className="field">
+                                                            <span>Category</span>
+                                                            <select
+                                                                className="select"
+                                                                value={editing.category}
+                                                                onChange={(e) => setDraft({ ...editing, category: e.target.value })}
+                                                            >
+                                                                {categoryOptions(categoriesFor(account), editing.category).map((c) => (
+                                                                    <option key={c} value={c}>
+                                                                        {c}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </label>
+                                                        <div className="field">
+                                                            <span>How it's split</span>
+                                                            <Segmented
+                                                                label="Allocation"
+                                                                value={editing.allocation}
+                                                                options={ALLOCATIONS.map((a) => ({ value: a, label: ALLOCATION_LABEL[a] }))}
+                                                                onChange={(allocation) =>
+                                                                    setDraft({
+                                                                        ...editing,
+                                                                        allocation,
+                                                                        member_id: editing.member_id ?? account?.owner.user_id ?? null,
+                                                                    })
+                                                                }
+                                                            />
+                                                            <span style={{ fontWeight: 400 }}>{ALLOCATION_HINT[editing.allocation]}</span>
+                                                        </div>
+                                                        <div className="edit-actions">
+                                                            <button className="btn btn-ink btn-small" onClick={() => handleSave(t)}>
+                                                                Save
+                                                            </button>
+                                                            <button className="btn btn-small" style={{ background: "var(--bg)" }} onClick={() => setDraft(null)}>
+                                                                Cancel
+                                                            </button>
+                                                            {account?.owner.user_id === me && (
+                                                                <button
+                                                                    className="btn btn-small"
+                                                                    style={{ background: "var(--bg)" }}
+                                                                    onClick={() => handleDelete(t.id)}
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        {editing.allocation === "personal" && members.length > 1 && (
+                                                            <div className="field">
+                                                                <span>Whose is it?</span>
+                                                                <Segmented
+                                                                    label="Whose"
+                                                                    value={String(editing.member_id ?? "")}
+                                                                    options={members.map((m) => ({
+                                                                        value: String(m.user_id),
+                                                                        label: m.display_name,
+                                                                    }))}
+                                                                    onChange={(v) => setDraft({ ...editing, member_id: Number(v) })}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </Fragment>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
     );
 }
 

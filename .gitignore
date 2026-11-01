@@ -19,3 +19,6 @@ myenv/
 # python packaging / tooling
 *.egg-info/
 .pytest_cache/
+
+# design inspector screenshots
+.taste-skill/
