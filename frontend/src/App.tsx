@@ -4,6 +4,7 @@ import { errorMessage, getAccounts, getCategories, getMe, getTransactions, thisM
 import type { Account, Me, Transaction } from "./api";
 import { supabase } from "./supabase";
 import Login from "./components/Login";
+import SetPassword from "./components/SetPassword";
 import AccountPanel from "./components/AccountPanel";
 import HouseholdPanel from "./components/HouseholdPanel";
 import TransactionForm from "./components/TransactionForm";
@@ -17,15 +18,27 @@ import "./App.css";
 
 function App() {
     const [session, setSession] = useState<Session | null | undefined>(undefined); // undefined: still loading
+    // Signed in by a password reset link: choose the new password before anything else.
+    const [recovering, setRecovering] = useState(false);
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data }) => setSession(data.session));
-        const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+        const { data } = supabase.auth.onAuthStateChange((event, s) => {
+            setSession(s);
+            if (event === "PASSWORD_RECOVERY") setRecovering(true);
+        });
         return () => data.subscription.unsubscribe();
     }, []);
 
     if (session === undefined) return null;
     if (session === null) return <Login />;
+    if (recovering)
+        return (
+            <div style={{ maxWidth: 360, margin: "80px auto" }}>
+                <h1>Choose a new password</h1>
+                <SetPassword onDone={() => setRecovering(false)} />
+            </div>
+        );
     return <Home key={session.user.id} />;
 }
 
@@ -40,6 +53,7 @@ function Home() {
     const [categories, setCategories] = useState<Record<string, string[]>>({});
     const [categoriesVersion, setCategoriesVersion] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const [settingPassword, setSettingPassword] = useState(false);
 
     const fetchAccounts = useCallback(async () => {
         setAccounts(await getAccounts());
@@ -116,9 +130,20 @@ function Home() {
                 </select>
                 <span>
                     <button onClick={handleRename}>{me.display_name}</button>{" "}
+                    <button onClick={() => setSettingPassword(!settingPassword)}>Set password</button>{" "}
                     <button onClick={() => supabase.auth.signOut()}>Sign out</button>
                 </span>
             </header>
+
+            {settingPassword && (
+                <SetPassword
+                    onDone={() => {
+                        setSettingPassword(false);
+                        window.alert("Password saved. You can now sign in with it.");
+                    }}
+                    onCancel={() => setSettingPassword(false)}
+                />
+            )}
 
             <h1>{viewName ?? "Spending"}</h1>
 
