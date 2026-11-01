@@ -210,6 +210,62 @@ class Transaction(Orm):
     category: str | None
 
 
+# Categories and budgets
+
+Name = Field(min_length=1, max_length=100)
+
+
+class Category(Orm):
+    id: int
+    name: str
+    is_fallback: bool  # where anything unmatched goes; can be renamed but not deleted
+
+
+class CategoryCreate(BaseModel):
+    name: str = Name
+
+
+class CategoryUpdate(BaseModel):
+    name: str = Name
+
+
+class CategoryRule(Orm):
+    id: int
+    pattern: str
+    category: str
+
+
+class CategoryRuleCreate(BaseModel):
+    pattern: str = Field(min_length=2, max_length=200)
+    category: str = Name
+
+
+class CategoryRuleResult(BaseModel):
+    rule: CategoryRule
+    recategorized: int  # transactions the rules now put somewhere else
+
+
+class BudgetSet(BaseModel):
+    category: str = Name
+    month: str | None = Field(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")  # YYYY-MM for one month; null for every month
+    amount_minor: int | None = Field(None, ge=0)  # null removes the target
+
+
+class BudgetLine(BaseModel):
+    category: str
+    recurring_minor: int | None  # the target for every month
+    override_minor: int | None  # this month's own target, if set
+    target_minor: int | None  # what applies this month
+    spent_minor: int
+
+
+class BudgetMonth(BaseModel):
+    month: str  # YYYY-MM
+    lines: list[BudgetLine]
+    target_minor: int
+    spent_minor: int
+
+
 # Settlement
 
 class MemberShare(Person):

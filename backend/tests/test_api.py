@@ -191,11 +191,6 @@ def test_delete_transaction(couple, axel, ebba):
     assert axel.delete(f"/transactions/{t['id']}").status_code == 404
 
 
-def test_category_options(axel):
-    categories = axel.get("/categories").json()
-    assert "Groceries" in categories and "Other" in categories
-
-
 # Settlement
 
 

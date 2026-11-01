@@ -5,13 +5,17 @@ account. A household is optional; an owner can share an account into one, which
 lets the other members see and allocate its transactions. Access is therefore
 always "accounts I own, or accounts shared into a household I'm a member of"
 (see access.py).
+
+Categories, category rules and budgets belong to a scope: a user (for their
+unshared accounts) or a household (for the accounts shared into it). Transactions
+store the category by name, so "Groceries" adds up across scopes in "My view".
 """
 
 import datetime as dt
 from enum import StrEnum
 
 from spending_core import Allocation
-from sqlalchemy import JSON, BigInteger, Enum, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import JSON, BigInteger, CheckConstraint, Enum, ForeignKey, Index, String, UniqueConstraint, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -117,8 +121,64 @@ class Transaction(Base):
     allocation: Mapped[Allocation] = mapped_column(_enum(Allocation))
     # Whose spending it is when allocation is personal; always null otherwise.
     member_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
-    category: Mapped[str | None] = mapped_column(String(100))  # becomes a Category FK in Phase 3
+    category: Mapped[str | None] = mapped_column(String(100))  # a Category name in the account's scope
+    # Set by a person rather than by rules; rule changes don't touch it.
+    category_manual: Mapped[bool] = mapped_column(default=False, server_default=false())
     dedupe_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
     account: Mapped[Account] = relationship()
+
+
+def _one_scope(table: str) -> CheckConstraint:
+    return CheckConstraint("(user_id IS NULL) <> (household_id IS NULL)", name=f"ck_{table}_one_scope")
+
+
+def _unique_per_scope(table: str, *columns: str) -> tuple[Index, Index]:
+    """Unique within each user and within each household (partial indexes, on SQLite and Postgres alike)."""
+    return tuple(
+        Index(f"uq_{table}_{scope}", f"{scope}_id", *columns, unique=True,
+              sqlite_where=text(f"{scope}_id IS NOT NULL"), postgresql_where=text(f"{scope}_id IS NOT NULL"))
+        for scope in ("user", "household")
+    )
+
+
+class Scoped:
+    """Belongs to exactly one of a user or a household."""
+
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    household_id: Mapped[int | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+
+
+class Category(Scoped, Base):
+    __tablename__ = "categories"
+    __table_args__ = (_one_scope(__tablename__), *_unique_per_scope(__tablename__, "name"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    # The default category this one started as (spending_core.DEFAULT_CATEGORIES), so
+    # the default keywords still find it after a rename. Null for categories users add.
+    default_key: Mapped[str | None] = mapped_column(String(100))
+
+
+class CategoryRule(Scoped, Base):
+    __tablename__ = "category_rules"
+    __table_args__ = (_one_scope(__tablename__),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pattern: Mapped[str] = mapped_column(String(200))  # matched case-insensitively within the description
+    category: Mapped[str] = mapped_column(String(100))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+
+
+class Budget(Scoped, Base):
+    """A monthly target for a category: every month (month is null) or one month's override."""
+
+    __tablename__ = "budgets"
+    __table_args__ = (_one_scope(__tablename__),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category: Mapped[str] = mapped_column(String(100))
+    month: Mapped[dt.date | None]  # the first day of the month
+    amount_minor: Mapped[int] = mapped_column(BigInteger)

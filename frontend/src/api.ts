@@ -124,6 +124,33 @@ export interface ImportResult {
     created_at: string;
 }
 
+export interface Category {
+    id: number;
+    name: string;
+    is_fallback: boolean; // catches everything unmatched; can be renamed but not deleted
+}
+
+export interface CategoryRule {
+    id: number;
+    pattern: string; // matched case-insensitively within the description
+    category: string;
+}
+
+export interface BudgetLine {
+    category: string;
+    recurring_minor: number | null; // the target for every month
+    override_minor: number | null; // this month's own target
+    target_minor: number | null; // what applies this month
+    spent_minor: number;
+}
+
+export interface BudgetMonth {
+    month: string; // YYYY-MM
+    lines: BudgetLine[];
+    target_minor: number;
+    spent_minor: number;
+}
+
 export interface Settlement {
     household_id: number;
     per_member: (Person & { amount_minor: number })[];
@@ -210,9 +237,62 @@ export const undoImport = async (accountId: number, importId: number) => {
     await api.delete(`/accounts/${accountId}/imports/${importId}`);
 };
 
-// Transactions
+// Categories, rules and budgets: your own (householdId null) or a household's
 
-export const getCategories = async () => (await api.get<string[]>("/categories")).data;
+const scope = (householdId: number | null) => ({ params: householdId ? { household_id: householdId } : {} });
+
+export const getCategories = async (householdId: number | null) =>
+    (await api.get<Category[]>("/categories", scope(householdId))).data;
+
+export const createCategory = async (householdId: number | null, name: string) =>
+    (await api.post<Category>("/categories", { name }, scope(householdId))).data;
+
+/** The scope's transactions, rules and budgets follow the new name. */
+export const renameCategory = async (householdId: number | null, categoryId: number, name: string) =>
+    (await api.patch<Category>(`/categories/${categoryId}`, { name }, scope(householdId))).data;
+
+export const deleteCategory = async (householdId: number | null, categoryId: number) => {
+    await api.delete(`/categories/${categoryId}`, scope(householdId));
+};
+
+export const getRules = async (householdId: number | null) =>
+    (await api.get<CategoryRule[]>("/category-rules", scope(householdId))).data;
+
+/** Also re-categorizes the scope's transactions that nobody categorized by hand. */
+export const createRule = async (householdId: number | null, pattern: string, category: string) =>
+    (
+        await api.post<{ rule: CategoryRule; recategorized: number }>(
+            "/category-rules",
+            { pattern, category },
+            scope(householdId),
+        )
+    ).data;
+
+export const deleteRule = async (householdId: number | null, ruleId: number) => {
+    await api.delete(`/category-rules/${ruleId}`, scope(householdId));
+};
+
+/** Targets against spending: shared spending for a household, your own share for you. */
+export const getBudgets = async (householdId: number | null, month: string) =>
+    (await api.get<BudgetMonth>("/budgets", { params: { ...scope(householdId).params, month } })).data;
+
+/** A target for every month (month null) or only one; amount null removes it. */
+export const setBudget = async (
+    householdId: number | null,
+    category: string,
+    month: string | null,
+    amount_minor: number | null,
+) => {
+    await api.put("/budgets", { category, month, amount_minor }, scope(householdId));
+};
+
+/** The start of a rule for a description: its first two words without digits, e.g. "PRESSBYRÅN STH". */
+export const suggestPattern = (description: string) => {
+    const words = description.split(/\s+/).filter((w) => w && !/\d/.test(w));
+    return words.slice(0, 2).join(" ") || description.trim();
+};
+
+// Transactions
 
 /** Everything visible to the user, or only what's shared into one household. */
 export const getTransactions = async (householdId: number | null) =>

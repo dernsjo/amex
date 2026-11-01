@@ -6,11 +6,11 @@ import AccountSelect from "./AccountSelect";
 
 interface Props {
     accounts: Account[]; // the user's own accounts
-    categories: string[];
+    categoriesFor: (account: Account | undefined) => string[];
     fetchTransactions: () => Promise<void>;
 }
 
-function TransactionForm({ accounts, categories, fetchTransactions }: Props) {
+function TransactionForm({ accounts, categoriesFor, fetchTransactions }: Props) {
     const [accountId, setAccountId] = useState<number | null>(null);
     const [description, setDescription] = useState("");
     const [amount, setAmount] = useState("");
@@ -18,6 +18,7 @@ function TransactionForm({ accounts, categories, fetchTransactions }: Props) {
     const [error, setError] = useState<string | null>(null);
 
     const selected = accountId ?? accounts[0]?.id ?? null;
+    const categories = categoriesFor(accounts.find((a) => a.id === selected));
 
     const handleAdd = async (event: FormEvent) => {
         event.preventDefault();

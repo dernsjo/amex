@@ -1,10 +1,12 @@
-"""Keyword-based categorization.
+"""Categorization: a scope's own rules first, then the default keywords, then "Other".
 
-These defaults move to database rules (global + per household) in Phase 3;
-`categorize` already takes the rules as a parameter so that is a drop-in change.
+A scope is a user (their unshared accounts) or a household (the accounts shared
+into it); its rules and category names live in the database. The defaults below
+are versioned with the code.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 
 FALLBACK_CATEGORY = "Other"
 
@@ -45,7 +47,7 @@ DEFAULT_RULES: dict[str, list[str]] = {
 
 DEFAULT_CATEGORIES: list[str] = [*DEFAULT_RULES, FALLBACK_CATEGORY]
 
-# Monthly targets in SEK. Become per-household Budget rows in Phase 3.
+# Monthly targets in SEK used by the Streamlit PoC; the app stores budgets per user or household.
 DEFAULT_TARGETS_SEK: dict[str, int] = {
     "Groceries": 5000,
     "Shopping": 5000,
@@ -68,3 +70,46 @@ def categorize(
         if any(kw.lower() in text for kw in keywords):
             return category
     return fallback
+
+
+def normalize_text(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+@dataclass(frozen=True)
+class Rule:
+    pattern: str  # matched case-insensitively anywhere in the description
+    category: str
+
+
+class Categorizer:
+    """Categorize with a scope's own rules, falling back to the default keywords.
+
+    The longest matching pattern wins, so "ICA MAXI BYGG" beats "ICA"; between
+    patterns of equal length, the earlier rule wins. `names` maps each default
+    category to what the scope calls it (after a rename); a default category the
+    scope deleted falls back to the scope's fallback category.
+    """
+
+    def __init__(
+        self,
+        rules: Iterable[Rule] = (),
+        names: Mapping[str, str] | None = None,
+        defaults: Mapping[str, Sequence[str]] = DEFAULT_RULES,
+        fallback: str = FALLBACK_CATEGORY,
+    ):
+        normalized = [(normalize_text(r.pattern), r.category) for r in rules]
+        self.rules = sorted([r for r in normalized if r[0]], key=lambda r: -len(r[0]))
+        self.names = names
+        self.defaults = defaults
+        self.fallback = fallback
+
+    def __call__(self, description: str) -> str:
+        text = normalize_text(description)
+        for pattern, category in self.rules:
+            if pattern in text:
+                return category
+        default = categorize(description, self.defaults, self.fallback)
+        if self.names is None:
+            return default
+        return self.names.get(default) or self.names.get(self.fallback) or self.fallback

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import crud, models, schemas
-from ..access import owned_account
+from .. import categories, crud, models, schemas
+from ..access import Scope, owned_account
 from ..auth import get_current_user
 from ..database import get_db
 from .transactions import validate_category, validate_member
@@ -41,9 +42,13 @@ def update_account(
 ):
     if data.name is not None:
         account.name = data.name.strip()
-    if "household_id" in data.model_fields_set:
+    if "household_id" in data.model_fields_set and data.household_id != account.household_id:
         _check_household(db, user, data.household_id)
         account.household_id = data.household_id
+        db.flush()
+        # Its transactions now follow the new scope's rules.
+        only_this = select(models.Account.id).where(models.Account.id == account.id)
+        categories.recategorize(db, Scope.of(account), only_this)
     db.commit()
     db.refresh(account)
     return crud.account(account)
@@ -67,9 +72,8 @@ def create_transaction(
 ):
     if data.member_id is not None:
         validate_member(account, data.member_id)
-    if data.category is not None:
-        validate_category(data.category)
-    return crud.create_transaction(db, account, data)
+    category = validate_category(db, account, data.category) if data.category is not None else None
+    return crud.create_transaction(db, account, data, category)
 
 
 def _check_household(db: Session, user: models.User, household_id: int | None) -> None:
