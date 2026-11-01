@@ -10,10 +10,11 @@ interface Props {
     onMonthChange: (month: string) => void;
     isOwner: boolean; // only owners can reopen a closed month
     transactions: Transaction[]; // only to know when spending changed
+    onReview: (accountId: number, importId: number) => void; // go through a statement
 }
 
 /** Who owes whom for one month, closing the month, and the months closed before. */
-const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOwner, transactions }: Props) => {
+const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOwner, transactions, onReview }: Props) => {
     const dialogs = useDialogs();
     const [result, setResult] = useState<Settlement | null>(null);
     const [history, setHistory] = useState<Settlement[]>([]);
@@ -81,6 +82,26 @@ const SettlementCard = ({ householdId, householdName, month, onMonthChange, isOw
                 <p role="alert" className="alert">
                     {error}
                 </p>
+            )}
+
+            {!result?.closed_at && (result?.unchecked ?? []).length > 0 && (
+                <div className="notice" role="status">
+                    <p className="lead">Not everything has been gone through yet.</p>
+                    <ul>
+                        {result!.unchecked!.map((u) => (
+                            <li key={`${u.account_id}-${u.import_id}`}>
+                                {u.count} on {u.account_name}
+                                {u.import_id !== null ? " statement" : ", added by hand"}{" "}
+                                {u.import_id !== null && (
+                                    <button className="link" onClick={() => onReview(u.account_id, u.import_id!)}>
+                                        Go through them
+                                    </button>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="small muted">Until then they count as their account's default: shared on a shared account.</p>
+                </div>
             )}
 
             {result && (

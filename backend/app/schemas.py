@@ -202,11 +202,13 @@ class TransactionUpdate(BaseModel):
     allocation: Allocation | None = None
     member_id: int | None = None
     category: str | None = None
+    # Checked in a review. Changing allocation or member checks it too, unless this says false.
+    reviewed: bool | None = None
 
     @model_validator(mode="after")
     def at_least_one_field(self):
-        if self.allocation is None and self.member_id is None and self.category is None:
-            raise ValueError("Provide allocation, member_id and/or category")
+        if self.allocation is None and self.member_id is None and self.category is None and self.reviewed is None:
+            raise ValueError("Provide allocation, member_id, category and/or reviewed")
         return self
 
 
@@ -222,6 +224,7 @@ class Transaction(Orm):
     allocation: Allocation
     member_id: int | None
     category: str | None
+    reviewed: bool  # someone has said whose it is
 
 
 # Categories and budgets
@@ -354,12 +357,35 @@ class Transfer(BaseModel):
     amount_minor: int
 
 
+class Unchecked(BaseModel):
+    """Transactions in a month that nobody has gone through yet, per statement."""
+
+    account_id: int
+    account_name: str
+    import_id: int | None  # null: added by hand
+    period: MonthLabel | None = None  # the statement's month
+    count: int
+
+
+class StatementReview(BaseModel):
+    """Going through one statement: how far along, and what it comes to so far."""
+
+    statement: ImportResult
+    account_name: str
+    account_kind: AccountKind
+    total_count: int
+    checked_count: int
+    # What each person pays (a card) or is responsible for (a bank account) on this statement alone.
+    split: Bill
+
+
 class Settlement(BaseModel):
     household_id: int
     month: str  # YYYY-MM
     per_member: list[MemberShare]
     transfers: list[Transfer]  # who pays whom to even out the month's bank-account spending
     bills: list[Bill] = []  # how each credit card statement is split
+    unchecked: list[Unchecked] = []  # transactions in the month nobody has gone through yet
     outlay_minor: int
     shared_minor: int
     total_minor: int

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from tests.test_api import AMEX_CSV, add, upload
+from tests.test_api import AMEX_CSV, add, upload, user_id
 
 BANK_CSV = (
     "Kontoutdrag;;;\n"
@@ -195,3 +195,40 @@ def test_an_upload_can_move_to_another_month(couple, axel, ebba):
 
     assert axel.patch(url, json={"period": "2025-13"}).status_code == 422
     assert ebba.patch(url, json={"period": "2025-10"}).status_code in (403, 404)  # not her account
+
+
+# Going through a statement
+
+
+def test_reviewing_a_statement(couple, axel, ebba):
+    household_id, account_id = couple
+    axel.patch(f"/accounts/{account_id}", json={"kind": "credit"})
+    imp = confirm(axel, account_id, STATEMENT_CSV, BANK_CONFIG).json()
+    review_url = f"/accounts/{account_id}/imports/{imp['id']}/review"
+
+    review = ebba.get(review_url).json()  # a household member can go through it too
+    assert (review["total_count"], review["checked_count"], review["account_kind"]) == (3, 0, "credit")
+    assert {s["display_name"]: s["amount_minor"] for s in review["split"]["shares"]} == {"axel": 35000, "ebba": 35000}
+
+    rows = ebba.get("/transactions", params={"import_id": imp["id"]}).json()
+    assert len(rows) == 3 and not any(t["reviewed"] for t in rows)
+    shoes, *rest = sorted(rows, key=lambda t: t["amount_minor"])  # the 100 kr line
+    # Saying whose it is checks it; confirming one as it is checks it too.
+    r = ebba.patch("/transactions", json=[{"id": shoes["id"], "member_id": user_id(ebba)}, {"id": rest[0]["id"], "reviewed": True}])
+    assert [t["reviewed"] for t in r.json()] == [True, True]
+    # A category alone doesn't.
+    ebba.patch("/transactions", json=[{"id": rest[1]["id"], "category": "Travel"}])
+
+    review = ebba.get(review_url).json()
+    assert review["checked_count"] == 2
+    assert {s["display_name"]: s["amount_minor"] for s in review["split"]["shares"]} == {"axel": 30000, "ebba": 40000}
+
+    settlement = ebba.get(f"/households/{household_id}/settlement", params={"month": "2025-10"}).json()
+    assert [(u["account_name"], u["import_id"], u["period"], u["count"]) for u in settlement["unchecked"]] == [
+        ("Amex", imp["id"], "2025-10", 1)
+    ]
+
+
+def test_added_by_hand_is_already_checked(couple, axel):
+    _, account_id = couple
+    assert add(axel, account_id, 10)["reviewed"] is True

@@ -14,6 +14,7 @@ import type {
     ImportResult,
     Me,
     Settlement,
+    StatementReview,
     Summary,
     Transaction,
     Trends,
@@ -79,6 +80,7 @@ const transactions: Transaction[] = rows.map(([d, description, amount_minor, cat
     allocation,
     member_id,
     category,
+    reviewed: i >= 4, // the four latest aren't checked yet
 }));
 
 const categories: Category[] = ["Groceries", "Eating out", "Home", "Transport", "Health", "Subscriptions", "Other"].map((name, i) => ({
@@ -158,6 +160,7 @@ const settlement: Settlement = {
         { ...sam, amount_minor: 4_427_87, paid_minor: 1_955_74, balance_minor: 977_87, bill_minor: 3_450_00 },
     ],
     transfers: [{ debtor: alex, creditor: sam, amount_minor: 977_87 }],
+    unchecked: [{ account_id: 1, account_name: "Amex", import_id: 1, period: month, count: 4 }],
     bills: [
         {
             account_id: 1,
@@ -201,11 +204,43 @@ const imports: ImportResult[] = [
     },
 ];
 
+const amexRows = transactions.filter((t) => t.account_id === 1);
+const statementReview: StatementReview = {
+    statement: imports[0],
+    account_name: "Amex",
+    account_kind: "credit",
+    total_count: amexRows.length,
+    checked_count: amexRows.filter((t) => t.reviewed).length,
+    split: settlement.bills![0],
+};
+
 type Handler = (c: InternalAxiosRequestConfig) => unknown;
 const routes: [string, RegExp, unknown][] = [
     ["get", /^\/me$/, me],
     ["get", /^\/accounts$/, accounts],
-    ["get", /^\/transactions$/, ((c) => (c.params?.household_id ? transactions.filter((t) => t.account_id !== 3) : transactions)) as Handler],
+    [
+        "get",
+        /^\/transactions$/,
+        ((c) =>
+            c.params?.import_id
+                ? transactions.filter((t) => t.account_id === 1)
+                : c.params?.household_id
+                  ? transactions.filter((t) => t.account_id !== 3)
+                  : transactions) as Handler,
+    ],
+    ["get", /^\/accounts\/\d+\/imports\/\d+\/review$/, statementReview],
+    // Writes change nothing, but answer with the changed rows so the page can show them.
+    [
+        "patch",
+        /^\/transactions$/,
+        ((c) =>
+            (JSON.parse(c.data) as ({ id: number } & Partial<Transaction>)[]).map((u) => ({
+                ...transactions.find((t) => t.id === u.id),
+                ...u,
+                ...(u.member_id ? { allocation: "personal" } : {}),
+                reviewed: u.reviewed ?? true,
+            }))) as Handler,
+    ],
     ["get", /^\/categories$/, categories],
     ["get", /^\/category-rules$/, rules],
     ["get", /^\/budgets$/, budget],

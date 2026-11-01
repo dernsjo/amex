@@ -15,6 +15,7 @@ import CategoryPanel from "./components/CategoryPanel";
 import BudgetPanel from "./components/BudgetPanel";
 import Dashboard from "./components/Dashboard";
 import Analysis from "./components/Analysis";
+import StatementReview from "./components/StatementReview";
 import { DialogProvider, Segmented, Wordmark, useDialogs } from "./components/ui";
 import "./styles.css";
 
@@ -48,7 +49,7 @@ function App() {
     );
 }
 
-export type View = "overview" | "analysis" | "transactions" | "budget" | "settle" | "import" | "setup";
+export type View = "overview" | "analysis" | "transactions" | "budget" | "settle" | "import" | "setup" | "review";
 
 const VIEWS: { id: View; label: string; householdOnly?: boolean }[] = [
     { id: "overview", label: "Overview" },
@@ -62,25 +63,30 @@ const VIEWS: { id: View; label: string; householdOnly?: boolean }[] = [
 
 type SetupTab = "accounts" | "household" | "categories" | "you";
 
-const viewFromHash = (): View => {
-    const id = window.location.hash.slice(1);
-    return VIEWS.some((v) => v.id === id) ? (id as View) : "overview";
+/** A view, or a view with its subject after slashes: `review/<account id>/<import id>`. */
+export type Route = View | `review/${number}/${number}`;
+
+const parseHash = (hash: string): [View, string[]] => {
+    const [id, ...params] = hash.split("/");
+    const known = VIEWS.some((v) => v.id === id) || (id === "review" && params.length === 2);
+    return known ? [id as View, params] : ["overview", []];
 };
 
 /** The current view lives in the URL hash, so reloading and the back button keep your place. */
 const useView = () => {
-    const [view, setView] = useState<View>(viewFromHash);
+    const [hash, setHash] = useState(() => window.location.hash.slice(1));
     useEffect(() => {
-        const onHash = () => setView(viewFromHash());
+        const onHash = () => setHash(window.location.hash.slice(1));
         window.addEventListener("hashchange", onHash);
         return () => window.removeEventListener("hashchange", onHash);
     }, []);
-    const go = useCallback((next: View) => {
+    const go = useCallback((next: Route) => {
         window.location.hash = next;
-        setView(next);
+        setHash(next);
         window.scrollTo({ top: 0 });
     }, []);
-    return [view, go] as const;
+    const [view, params] = parseHash(hash);
+    return [view, go, params] as const;
 };
 
 export function Home({ initialHouseholdId = null }: { initialHouseholdId?: number | null }) {
@@ -95,7 +101,7 @@ export function Home({ initialHouseholdId = null }: { initialHouseholdId?: numbe
     const [categories, setCategories] = useState<Record<string, string[]>>({});
     const [categoriesVersion, setCategoriesVersion] = useState(0);
     const [error, setError] = useState<string | null>(null);
-    const [view, go] = useView();
+    const [view, go, viewParams] = useView();
     const [setupTab, setSetupTab] = useState<SetupTab>("accounts");
     const [menuOpen, setMenuOpen] = useState(false);
     const [passwordSaved, setPasswordSaved] = useState(false);
@@ -319,11 +325,36 @@ export function Home({ initialHouseholdId = null }: { initialHouseholdId?: numbe
                         onMonthChange={setMonth}
                         isOwner={household.role === "owner"}
                         transactions={transactions}
+                        onReview={(accountId, importId) => go(`review/${accountId}/${importId}`)}
+                    />
+                )}
+
+                {view === "review" && (
+                    <StatementReview
+                        key={viewParams.join("/")}
+                        accountId={Number(viewParams[0])}
+                        importId={Number(viewParams[1])}
+                        accounts={accounts}
+                        categoriesFor={categoriesFor}
+                        onChanged={fetchTransactions}
+                        onSettle={(account, period) => {
+                            if (period) setMonth(period);
+                            if (account.household_id !== null) {
+                                setHouseholdId(account.household_id);
+                                go("settle");
+                            } else go("overview");
+                        }}
+                        onBack={() => go("import")}
                     />
                 )}
 
                 {view === "import" && (
-                    <ImportWizard accounts={myAccounts} onImported={() => fetchAll()} onAddAccount={() => openSetup("accounts")} />
+                    <ImportWizard
+                        accounts={myAccounts}
+                        onImported={() => fetchAll()}
+                        onReview={(accountId, importId) => go(`review/${accountId}/${importId}`)}
+                        onAddAccount={() => openSetup("accounts")}
+                    />
                 )}
 
                 {view === "setup" && (

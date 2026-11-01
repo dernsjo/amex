@@ -1641,3 +1641,145 @@ strong {
     font-size: var(--step-small);
     color: var(--muted);
 }
+
+/* ---------- statement review ---------- */
+.review {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: var(--gap);
+    align-items: start;
+}
+.review-aside {
+    position: sticky;
+    top: 1.5rem;
+    display: grid;
+    gap: 0.9rem;
+}
+.review-split {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.4rem;
+}
+.review-split li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.review-split .amt {
+    font-size: var(--step-lead);
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.review-actions {
+    display: grid;
+    gap: var(--share-gap);
+}
+.progress {
+    height: 0.5rem;
+    background: var(--surface);
+}
+.progress span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    transition: width var(--t-ui) var(--ease-out);
+}
+.review-rows {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--share-gap);
+}
+/* One purchase: date, description, amount and category on top; whose it is below. */
+.review-row {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr) auto 11rem;
+    align-items: center;
+    gap: 0.6rem 1rem;
+    padding: 0.85rem 1rem;
+    background: var(--surface);
+    border-left: 4px solid transparent;
+    transition:
+        background-color var(--t-hover) ease,
+        opacity var(--t-hover) ease;
+}
+.review-row.active {
+    border-left-color: var(--accent);
+    background: var(--surface-2);
+}
+.review-row.checked:not(.active) {
+    opacity: 0.6;
+}
+.review-desc {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.review-amount {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
+}
+.review-amount.refund {
+    color: var(--muted);
+}
+.review-choice {
+    grid-column: 2 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+.review-mark {
+    font-size: var(--step-small);
+    color: var(--muted);
+}
+.keys kbd {
+    font: inherit;
+    font-weight: 600;
+    padding: 0 0.3rem;
+    background: var(--surface);
+}
+.notice {
+    padding: 1rem 1.25rem;
+    background: var(--field-2);
+    display: grid;
+    gap: 0.5rem;
+}
+.notice ul {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+@media (max-width: 900px) {
+    .review {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    /* On a phone the bill rides along at the bottom while you go through the list. */
+    .review-aside {
+        position: sticky;
+        top: auto;
+        bottom: 0;
+        order: 2;
+        box-shadow: 0 -1px 0 var(--line);
+    }
+    .review-row {
+        grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+    }
+    .review-category {
+        grid-column: 2 / -1;
+        justify-self: start;
+    }
+    .review-choice {
+        grid-column: 1 / -1;
+    }
+    .keys {
+        display: none;
+    }
+}

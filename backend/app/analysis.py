@@ -257,7 +257,10 @@ def _calculate(db: Session, hh: models.Household, month: dt.date) -> schemas.Set
     paid_lines: list[Line] = []  # bank-account spending: paid already, by the account's owner
     bill_lines: dict[int, list[Line]] = defaultdict(list)  # credit card spending, per card
     cards: dict[int, models.Account] = {}
+    unchecked: dict[tuple[int, int | None], int] = defaultdict(int)
     for t in _household_transactions(db, hh.id, month, next_month(month)):
+        if not t.reviewed:
+            unchecked[t.account_id, t.import_id] += 1
         if t.allocation == Allocation.PERSONAL and t.member_id not in members:
             raise SettlementError(
                 f"Transaction {t.id} ({t.description_clean}) is personal for someone who isn't a member"
@@ -299,6 +302,16 @@ def _calculate(db: Session, hh: models.Household, month: dt.date) -> schemas.Set
             for t in settle_up(balances)
         ],
         bills=bills,
+        unchecked=[
+            schemas.Unchecked(
+                account_id=account_id,
+                account_name=db.get(models.Account, account_id).name,
+                import_id=import_id,
+                period=db.get(models.Import, import_id).period if import_id else None,
+                count=count,
+            )
+            for (account_id, import_id), count in sorted(unchecked.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0))
+        ],
         outlay_minor=result.outlay,
         shared_minor=result.shared,
         total_minor=result.total,
@@ -319,6 +332,33 @@ def _bill(
         total_minor=split.total,
         outlay_minor=split.outlay,
         shares=[schemas.BillShare(**people[uid].model_dump(), amount_minor=amount) for uid, amount in shares.items()],
+    )
+
+
+def statement_review(db: Session, imp: models.Import) -> schemas.StatementReview:
+    """How far along going through one statement is, and what it comes to on its own."""
+    account = db.get(models.Account, imp.account_id)
+    rows = list(db.scalars(select(models.Transaction).where(models.Transaction.import_id == imp.id)))
+    if account.household_id is not None:
+        weights = _weights(db, account.household_id)
+        household = db.get(models.Household, account.household_id)
+        people = {m.user_id: person(m.user) for m in household.memberships}
+    else:
+        weights = {account.owner_id: 1}  # not shared: all of it is the owner's
+        people = {account.owner_id: person(account.owner)}
+    lines = [
+        Line(t.amount_minor, t.allocation, t.member_id)
+        for t in rows
+        # Personal spending of someone who has left the household isn't anyone's here.
+        if t.allocation != Allocation.PERSONAL or t.member_id in weights
+    ]
+    return schemas.StatementReview(
+        statement=schemas.ImportResult.model_validate(imp),
+        account_name=account.name,
+        account_kind=account.kind,
+        total_count=len(rows),
+        checked_count=sum(t.reviewed for t in rows),
+        split=_bill(account, lines, weights, people),
     )
 
 

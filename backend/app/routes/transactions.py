@@ -14,6 +14,7 @@ router = APIRouter(tags=["transactions"])
 def list_transactions(
     account_id: int | None = None,
     household_id: int | None = None,
+    import_id: int | None = Query(None, description="Only one statement's transactions"),
     skip: int = Query(0, ge=0),
     limit: int = Query(1000, ge=1, le=5000),
     user: models.User = Depends(get_current_user),
@@ -24,7 +25,7 @@ def list_transactions(
         visible_account(account_id, user, db)
     if household_id is not None:
         membership(household_id, user, db)
-    return crud.get_transactions(db, user, account_id, household_id, skip, limit)
+    return crud.get_transactions(db, user, account_id, household_id, skip, limit, import_id)
 
 
 @router.patch("/transactions", response_model=list[schemas.Transaction])
@@ -57,6 +58,10 @@ def update_transactions(
             validate_member(t.account, t.member_id)
         else:
             t.member_id = None
+        if update.reviewed is not None:
+            t.reviewed = update.reviewed
+        elif update.allocation is not None or update.member_id is not None:
+            t.reviewed = True  # someone said whose it is
     db.commit()
     return [found[u.id] for u in updates]
 

@@ -148,6 +148,8 @@ class Transaction(Base):
     category: Mapped[str | None] = mapped_column(String(100))  # a Category name in the account's scope
     # Set by a person rather than by rules; rule changes don't touch it.
     category_manual: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Someone has gone through it and said whose it is (see the statement review).
+    reviewed: Mapped[bool] = mapped_column(default=False, server_default=false())
     dedupe_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 

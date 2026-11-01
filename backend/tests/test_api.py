@@ -228,6 +228,7 @@ def test_settlement_matches_poc(couple, axel, ebba):
         ],
         "transfers": [{"debtor": ebba_person, "creditor": axel_person, "amount_minor": 55000}],
         "bills": [],  # a bank account: paid already, so no bill to split
+        "unchecked": [],  # added by hand, so already checked
         "outlay_minor": 30000,
         "shared_minor": 100000,
         "total_minor": 155000,

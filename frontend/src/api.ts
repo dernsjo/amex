@@ -67,6 +67,7 @@ export interface Transaction {
     allocation: Allocation;
     member_id: number | null;
     category: string | null;
+    reviewed: boolean; // someone has gone through it and said whose it is
 }
 
 export interface NewTransaction {
@@ -190,6 +191,8 @@ export interface Settlement {
     per_member: MemberShare[];
     transfers: { debtor: Person; creditor: Person; amount_minor: number }[]; // for bank-account spending
     bills?: Bill[]; // one per credit card; missing in months closed before cards were split as bills
+    // Transactions in the month nobody has gone through yet, per statement (import_id null: added by hand).
+    unchecked?: { account_id: number; account_name: string; import_id: number | null; period: string | null; count: number }[];
     outlay_minor: number;
     shared_minor: number;
     total_minor: number;
@@ -311,6 +314,19 @@ export const getImports = async (accountId: number) =>
 export const updateImport = async (accountId: number, importId: number, period: string) =>
     (await api.patch<ImportResult>(`/accounts/${accountId}/imports/${importId}`, { period })).data;
 
+/** Going through a statement: how many are checked, and what each person's part comes to so far. */
+export interface StatementReview {
+    statement: ImportResult;
+    account_name: string;
+    account_kind: AccountKind;
+    total_count: number;
+    checked_count: number;
+    split: Bill; // what each pays (a card) or is responsible for (a bank account), on this statement alone
+}
+
+export const getStatementReview = async (accountId: number, importId: number) =>
+    (await api.get<StatementReview>(`/accounts/${accountId}/imports/${importId}/review`)).data;
+
 export const undoImport = async (accountId: number, importId: number) => {
     await api.delete(`/accounts/${accountId}/imports/${importId}`);
 };
@@ -401,7 +417,16 @@ export const getTransactions = async (householdId: number | null) =>
 export const createTransaction = async (accountId: number, transaction: NewTransaction) =>
     (await api.post<Transaction>(`/accounts/${accountId}/transactions`, transaction)).data;
 
-export type TransactionChanges = Partial<Pick<Transaction, "allocation" | "member_id" | "category">>;
+/** Changing allocation or member also checks it, unless `reviewed: false` is sent. */
+export type TransactionChanges = Partial<Pick<Transaction, "allocation" | "member_id" | "category" | "reviewed">>;
+
+/** Several changes at once, all or nothing. */
+export const updateTransactions = async (updates: ({ id: number } & TransactionChanges)[]) =>
+    (await api.patch<Transaction[]>("/transactions", updates)).data;
+
+/** One statement's transactions. */
+export const getStatementTransactions = async (importId: number) =>
+    (await api.get<Transaction[]>("/transactions", { params: { import_id: importId } })).data;
 
 export const updateTransaction = async (transactionId: number, changes: TransactionChanges) =>
     (await api.patch<Transaction[]>("/transactions", [{ id: transactionId, ...changes }])).data;
