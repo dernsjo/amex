@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
-from spending_core import ImportFileError, parse_amex_csv
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
@@ -9,8 +8,6 @@ from ..database import get_db
 from .transactions import validate_category, validate_member
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
-
-MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 @router.get("", response_model=list[schemas.Account])
@@ -73,24 +70,6 @@ def create_transaction(
     if data.category is not None:
         validate_category(data.category)
     return crud.create_transaction(db, account, data)
-
-
-@router.post("/{account_id}/imports", response_model=schemas.ImportResult, status_code=status.HTTP_201_CREATED)
-async def upload_import(
-    file: UploadFile = File(...),
-    account: models.Account = Depends(owned_account),
-    user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Import an Amex CSV export. Rows already imported into this account are skipped."""
-    contents = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(contents) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "File is larger than 5 MB")
-    try:
-        parsed = parse_amex_csv(contents)
-    except ImportFileError as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
-    return crud.import_transactions(db, account, user, "amex_se", file.filename or "upload.csv", contents, parsed)
 
 
 def _check_household(db: Session, user: models.User, household_id: int | None) -> None:

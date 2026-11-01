@@ -110,8 +110,10 @@ def test_member_cannot_assign_transaction_to_outsider(couple, axel, mallory):
 
 
 def test_member_lookup_by_email_is_exact(axel, login):
-    login("a_b")  # a_b@example.com
+    a_b = login("a_b").get("/me").json()["id"]  # a_b@example.com
     hh = axel.post("/households", json={"name": "Home"}).json()
-    # With LIKE semantics "_" would match any character.
-    assert axel.post(f"/households/{hh['id']}/members", json={"email": "axb@example.com"}).status_code == 404
-    assert axel.post(f"/households/{hh['id']}/members", json={"email": "A_B@example.com"}).status_code == 201
+    # With LIKE semantics "_" would match any character and add a_b instead.
+    r = axel.post(f"/households/{hh['id']}/members", json={"email": "axb@example.com"}).json()
+    assert r["members"][1]["user_id"] != a_b
+    r = axel.post(f"/households/{hh['id']}/members", json={"email": "A_B@example.com"}).json()
+    assert r["members"][2]["user_id"] == a_b

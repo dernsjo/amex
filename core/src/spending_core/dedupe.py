@@ -4,7 +4,7 @@ import hashlib
 from collections import Counter
 from collections.abc import Iterable
 
-from .amex import ParsedTransaction
+from .importers import ParsedTransaction
 
 
 def normalize_description(description: str) -> str:

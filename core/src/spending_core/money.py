@@ -6,10 +6,12 @@ _MINUS_SIGNS = ("−", "–")
 _GROUP_SEPARATORS = (" ", " ", " ")
 
 
-def parse_amount(raw: str | int | float | Decimal) -> int:
+def parse_amount(raw: str | int | float | Decimal, decimal_separator: str | None = None) -> int:
     """Parse a bank amount into integer minor units (öre).
 
     Accepts "1 234,56", "−12,30" (Unicode minus), "-12.30", "500.0" and numbers.
+    With a known `decimal_separator` the other character is a thousands separator,
+    so "1.234,56" (",") and "1,234.56" (".") work too.
     Raises ValueError on anything else instead of silently returning 0.
     """
     if isinstance(raw, (int, Decimal)):
@@ -22,9 +24,16 @@ def parse_amount(raw: str | int | float | Decimal) -> int:
         text = text.replace(sign, "-")
     for sep in _GROUP_SEPARATORS:
         text = text.replace(sep, "")
-    if "," in text and "." in text:
+    if decimal_separator == ",":
+        text = text.replace(".", "").replace(",", ".")
+    elif decimal_separator == ".":
+        text = text.replace(",", "")
+    elif decimal_separator is not None:
+        raise ValueError(f"Decimal separator must be ',' or '.', not {decimal_separator!r}")
+    elif "," in text and "." in text:
         raise ValueError(f"Ambiguous amount {raw!r}: contains both ',' and '.'")
-    text = text.replace(",", ".")
+    else:
+        text = text.replace(",", ".")
 
     try:
         value = Decimal(text)

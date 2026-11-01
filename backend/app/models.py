@@ -11,7 +11,7 @@ import datetime as dt
 from enum import StrEnum
 
 from spending_core import Allocation
-from sqlalchemy import BigInteger, Enum, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import JSON, BigInteger, Enum, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -31,7 +31,9 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    auth_subject: Mapped[str] = mapped_column(String(255), unique=True)  # Supabase user id (JWT `sub`)
+    # Supabase user id (JWT `sub`). Null for someone added to a household before
+    # signing in; they take over this row on first sign-in with the same email.
+    auth_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
     email: Mapped[str] = mapped_column(String(320), index=True)
     display_name: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
@@ -75,6 +77,8 @@ class Account(Base):
     household_id: Mapped[int | None] = mapped_column(ForeignKey("households.id", ondelete="SET NULL"), index=True)
     name: Mapped[str] = mapped_column(String(100))
     currency: Mapped[str] = mapped_column(String(3), default="SEK")
+    # How uploads are read (spending_core.ImportConfig.to_dict()); saved on each confirmed import.
+    import_config: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
     owner: Mapped[User] = relationship()

@@ -76,13 +76,6 @@ def test_uploading_the_same_file_twice_adds_nothing(axel):
     assert len(axel.get("/transactions").json()) == 2
 
 
-def test_upload_rejects_non_amex_file(axel):
-    account = axel.post("/accounts", json={"name": "Amex"}).json()
-    r = upload(axel, account["id"], b"a,b\n1,2\n", "x.csv")
-    assert r.status_code == 400
-    assert "missing column" in r.json()["detail"]
-
-
 def test_upload_into_shared_account_defaults_to_shared(couple, axel):
     _, account_id = couple
     upload(axel, account_id)
@@ -102,13 +95,6 @@ def test_both_members_see_the_same_household(couple, axel, ebba):
     assert axel.get(f"/transactions?household_id={household_id}").json() == ebba.get(
         f"/transactions?household_id={household_id}"
     ).json()
-
-
-def test_add_member_requires_a_signed_in_user(axel):
-    hh = axel.post("/households", json={"name": "Home"}).json()
-    r = axel.post(f"/households/{hh['id']}/members", json={"email": "nobody@example.com"})
-    assert r.status_code == 404
-    assert "sign in" in r.json()["detail"]
 
 
 def test_add_member_twice_conflicts(couple, axel):

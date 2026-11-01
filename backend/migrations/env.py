@@ -26,6 +26,11 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     connectable = make_engine(url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
+        if render_as_batch:
+            # Batch mode rebuilds a table by dropping it; with foreign keys enforced,
+            # that drop would cascade-delete every row referencing it.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()  # the PRAGMA opened a transaction; migrations must run in their own
         context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=render_as_batch)
         with context.begin_transaction():
             context.run_migrations()

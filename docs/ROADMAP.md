@@ -58,6 +58,9 @@ Key decisions:
   who a transaction belongs to, so Ebba can mark exceptions on Axel's card.
 - **Defaults follow sharing.** New spending on an unshared account is personal to
   the owner; on a shared account it's shared until someone says otherwise.
+- **Members can be added before they sign up.** Adding an unknown email creates a
+  pending member (a `User` without `auth_subject`) who can be split with at once;
+  their first sign-in with that verified email takes over the row.
 - **Who paid comes from the account owner** (Phase 4 uses this for "who owes whom").
 - **Settlement for N members:** each member's share = their personal spending +
   weight × shared spending. Outlays are reported separately.
@@ -67,11 +70,18 @@ Key decisions:
 ## 3. Importers
 
 ```python
-class Importer(Protocol):
+class Importer(Protocol):            # spending_core/importers/
     id: str
-    def detect(self, header: list[str], sample: list[list[str]]) -> float: ...  # confidence 0–1
-    def parse(self, file) -> list[ParsedTransaction]: ...
+    name: str
+    def detect(self, table: Table) -> float: ...  # confidence 0–1
+    def parse(self, table: Table) -> list[ParsedTransaction]: ...
 ```
+
+`read_table` turns any CSV export into a `Table` first: it handles UTF-8 or
+Windows-1252, `,` / `;` / tab delimiters, and skips preamble lines above the header.
+An upload is read with, in order: the config sent with it, the account's saved
+config if its columns still match, a built-in importer that recognizes the file,
+or a mapping guessed from the header names and content.
 
 - **Built-in importers:** `AmexSE` first, then the big Swedish banks, using real
   (anonymized) exports as test fixtures.
@@ -156,9 +166,13 @@ and create a rule if they accept, so categorization improves per household over 
 - ~~Load the PoC data as household #1~~ (dropped: not worth importing)
 - [ ] Verify the migrations against Postgres (Docker still wasn't running)
 
-### Phase 2: Imports
-- Importer interface, `AmexSE`, generic CSV mapper with saved mappings
-- Upload → preview → confirm flow, deduplication
+### Phase 2: Imports (branch `phase-2-imports`)
+- [x] Importer interface, `AmexSE`, generic CSV mapper with guessed and saved mappings
+- [x] Upload → preview → confirm flow, deduplication, "this file was already imported" warning
+- [x] Import history per account, with undo
+- [ ] Built-in importers for the big Swedish banks, from real anonymized exports
+      (the generic mapper covers them until then)
+- [ ] Confirm the raw Amex date format with a real export (carried over from Phase 0)
 
 ### Phase 3: Categories and budgets
 - Default categories and rules, household rules, learning rules from corrections

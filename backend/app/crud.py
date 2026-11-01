@@ -1,13 +1,9 @@
-import hashlib
-from collections.abc import Sequence
 from datetime import date
 
 from spending_core import (
     Allocation,
     Line,
-    ParsedTransaction,
     categorize,
-    dedupe_hashes,
     settle,
     to_minor,
 )
@@ -52,6 +48,7 @@ def household(household: models.Household) -> schemas.Household:
                 email=m.user.email,
                 role=m.role,
                 split_weight=m.split_weight,
+                pending=m.user.auth_subject is None,
             )
             for m in household.memberships
         ],
@@ -104,6 +101,7 @@ def account(acc: models.Account) -> schemas.Account:
         currency=acc.currency,
         owner=person(acc.owner),
         household_id=acc.household_id,
+        import_config=acc.import_config,
         members=[person(u) for u in assignable_people(acc)],
     )
 
@@ -163,64 +161,6 @@ def create_transaction(db: Session, acc: models.Account, data: schemas.Transacti
     db.commit()
     db.refresh(t)
     return t
-
-
-def import_transactions(
-    db: Session,
-    acc: models.Account,
-    user: models.User,
-    importer: str,
-    filename: str,
-    content: bytes,
-    parsed: Sequence[ParsedTransaction],
-) -> models.Import:
-    """Store parsed rows, skipping ones already imported into this account."""
-    hashes = dedupe_hashes(acc.id, parsed)
-    existing = set(
-        db.scalars(
-            select(models.Transaction.dedupe_hash).where(
-                models.Transaction.account_id == acc.id, models.Transaction.dedupe_hash.in_(hashes)
-            )
-        )
-    )
-    imp = models.Import(
-        account_id=acc.id,
-        created_by_id=user.id,
-        importer=importer,
-        filename=filename,
-        file_hash=hashlib.sha256(content).hexdigest(),
-        period_start=min((t.booked_on for t in parsed), default=None),
-        period_end=max((t.booked_on for t in parsed), default=None),
-    )
-    db.add(imp)
-    db.flush()
-
-    allocation, member_id = default_allocation(acc)
-    new = []
-    for t, h in zip(parsed, hashes, strict=True):
-        if h in existing:
-            continue
-        new.append(
-            models.Transaction(
-                account_id=acc.id,
-                import_id=imp.id,
-                booked_on=t.booked_on,
-                description_raw=t.description,
-                description_clean=t.description,
-                amount_minor=t.amount_minor,
-                currency=acc.currency,
-                allocation=allocation,
-                member_id=member_id,
-                category=categorize(t.description),
-                dedupe_hash=h,
-            )
-        )
-    db.add_all(new)
-    imp.transaction_count = len(new)
-    imp.duplicate_count = len(parsed) - len(new)
-    db.commit()
-    db.refresh(imp)
-    return imp
 
 
 # Settlement

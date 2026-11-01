@@ -24,6 +24,7 @@ def make_token(sub: str, email: str, **overrides) -> str:
         "iss": f"{SUPABASE_URL}/auth/v1",
         "exp": int(time.time()) + 3600,
         "role": "authenticated",
+        "user_metadata": {"email": email, "email_verified": True},
     } | overrides
     return jwt.encode(claims, secret, algorithm="HS256")
 

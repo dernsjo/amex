@@ -40,11 +40,13 @@ def add_member(
     owner: models.Membership = Depends(owner_membership),
     db: Session = Depends(get_db),
 ):
-    """Add someone who has signed in at least once. Invitations by link come in Phase 5."""
+    """Add someone by email. If they haven't signed in yet they're added as a pending
+    member, who can be split with right away and takes over the membership on first sign-in."""
     hh = owner.household
-    user = crud.get_user_by_email(db, data.email)
+    email = data.email.strip()
+    user = crud.get_user_by_email(db, email)
     if user is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No user with that email; they need to sign in once first")
+        user = models.User(email=email, display_name=(data.display_name or email.split("@")[0]).strip())
     if any(m.user_id == user.id for m in hh.memberships):
         raise HTTPException(status.HTTP_409_CONFLICT, f"{user.display_name} is already a member")
     hh.memberships.append(models.Membership(user=user, role=models.Role.MEMBER))

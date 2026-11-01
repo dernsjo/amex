@@ -47,6 +47,6 @@ def test_bad_date():
         parse_amex_csv("Datum,Beskrivning,Belopp\nyesterday,A,1\n")
 
 
-def test_non_utf8():
-    with pytest.raises(ImportFileError, match="UTF-8"):
-        parse_amex_csv("Datum,Beskrivning,Belopp\n2025-07-02,HEMKÖP,1\n".encode("latin-1"))
+def test_windows_1252_is_read():
+    content = "Datum,Beskrivning,Belopp\n2025-07-02,HEMKÖP,1\n".encode("cp1252")
+    assert parse_amex_csv(content)[0].description == "HEMKÖP"
