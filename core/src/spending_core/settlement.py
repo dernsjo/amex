@@ -5,7 +5,7 @@ Outlays (spending to be reimbursed by someone outside the split) are reported
 separately, and excluded lines are ignored.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Hashable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
@@ -33,12 +33,12 @@ _LABELS = {
 class Line:
     amount_minor: int
     allocation: Allocation
-    member: str | None = None  # required iff allocation is PERSONAL
+    member: Hashable | None = None  # a name or id; required iff allocation is PERSONAL
 
 
 @dataclass(frozen=True)
 class Settlement:
-    per_member: dict[str, int]  # what each member is responsible for, in minor units
+    per_member: dict[Hashable, int]  # what each member is responsible for, in minor units
     outlay: int
     shared: int
     total: int  # sum of all non-excluded lines; equals sum(per_member) + outlay
@@ -58,7 +58,7 @@ def allocation_from_label(label: str, members: Iterable[str]) -> tuple[Allocatio
         raise ValueError(f"Unknown paid-by label {label!r}; expected a member or one of {sorted(_LABELS)}") from None
 
 
-def settle(lines: Iterable[Line], weights: Mapping[str, int | Fraction]) -> Settlement:
+def settle(lines: Iterable[Line], weights: Mapping[Hashable, int | Fraction]) -> Settlement:
     """Split lines between members according to weights (e.g. {"A": 1, "B": 1} for 50/50).
 
     Shared amounts are split exactly in minor units: leftover öre from rounding go
@@ -90,7 +90,7 @@ def settle(lines: Iterable[Line], weights: Mapping[str, int | Fraction]) -> Sett
     return Settlement(per_member=per_member, outlay=outlay, shared=shared, total=total)
 
 
-def _split_exact(amount: int, weights: Mapping[str, int | Fraction]) -> dict[str, int]:
+def _split_exact(amount: int, weights: Mapping[Hashable, int | Fraction]) -> dict[Hashable, int]:
     """Largest-remainder apportionment of an integer amount; handles negative amounts."""
     sign = -1 if amount < 0 else 1
     amount = abs(amount)

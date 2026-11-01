@@ -1,7 +1,8 @@
 # Roadmap: from PoC to a multi-household product
 
-Goal: a user logs in and sees **their household**: members, accounts, budgets,
-analysis and who owes whom. Sized for ~10 users at first, so the effort goes into
+Goal: a user logs in and sees **their own spending**: accounts, budgets and
+analysis. Sharing with a household (members, split weights, who owes whom) is an
+optional layer on top. Sized for ~10 users at first, so the effort goes into
 a correct data model and tenant isolation, not infrastructure.
 
 ## 1. What stops being hardcoded
@@ -10,7 +11,7 @@ a correct data model and tenant isolation, not infrastructure.
 |---|---|
 | Amex CSV format | Importer plugins + a generic CSV mapper |
 | Axel and Ebba | Household members (any number) |
-| `Delad` / `Utlägg` / `Excludera` | An allocation type per transaction |
+| `Delad` / `Utlägg` / `Excludera` | An allocation per transaction: shared, personal, outlay, excluded |
 | An even 50/50 split | Split weights per household (50/50, 60/40, by income) |
 | `CATEGORY_KEYWORDS` | Default categories and rules + each household's own |
 | `targets = {...}` in the plot function | A budgets table per household, category and month |
@@ -18,40 +19,48 @@ a correct data model and tenant isolation, not infrastructure.
 
 ## 2. Core data model
 
+**User first, household optional.** Data belongs to users; a household is a way
+to share some of it. Someone using the app alone never has to create one.
+
 ```
+User ──< Account              (owner_id, household_id nullable, currency)
 User ──< Membership >── Household
                  role: owner | member
-                 split_weight: 0.5
+                 split_weight: 1      # relative: 1/1 = 50/50, 3/2 = 60/40
 
-Household ──< Account          (Amex, bank account; owner_member_id, currency)
-Account   ──< Import           (file name, hash, importer used, period, status)
-Import    ──< Transaction
+Account ──< Import            (file name, hash, importer used, period, counts)
+Account ──< Transaction
 Transaction:
-    household_id, account_id, import_id
+    account_id, import_id
     booked_on: date
     description_raw, description_clean
     amount_minor: int, currency           # whole öre, never floats
-    allocation: shared | personal | reimbursable | excluded
-    member_id (nullable)                  # who it belongs to, if personal
-    category_id
+    allocation: shared | personal | outlay | excluded
+    member_id (nullable)                  # whose it is, iff personal
+    category                              # string until Phase 3 makes it a FK
     dedupe_hash (unique per account)
 
-Household ──< Category         (null household_id = system default)
-Household ──< CategoryRule     (pattern → category; created from user corrections)
-Household ──< Budget           (category, month or "recurring", amount)
-Household ──< Settlement       (period, result snapshot, closed_at)
+Household ──< Category         (null household_id = system default)   (Phase 3)
+Household ──< CategoryRule     (pattern → category)                   (Phase 3)
+Household ──< Budget           (category, month or "recurring")       (Phase 3)
+Household ──< Settlement       (period, result snapshot, closed_at)   (Phase 4)
 ```
 
 Key decisions:
-- **Every row carries `household_id`.** Each request resolves the current household
-  through one FastAPI dependency, and every query filters on it. The most important
-  test in the codebase is "user A can't read household B".
-- **Who paid comes from the account owner.** Ebba's card means Ebba paid, so users
-  only mark the exceptions.
-- **Settlement for N members:** each member's balance = what they paid −
-  (their personal spending + weight × shared spending). Reimbursable outlays go to
-  whoever they're tagged to. This is the PoC logic generalized, so the tests reuse
-  real Amex months.
+- **One access rule.** A user sees an account if they own it, or it's shared into a
+  household they're a member of; transactions and imports follow their account.
+  `backend/app/access.py` is the only place that decides this, and anything not
+  visible answers 404. `tests/test_isolation.py` is the most important test file.
+- **Sharing is per account.** The owner shares an account into a household (or
+  stops sharing). Leaving a household unshares your accounts from it.
+- **Owners manage, members allocate.** Only the account owner imports, adds,
+  deletes or reshares; any household member can change allocation, category and
+  who a transaction belongs to, so Ebba can mark exceptions on Axel's card.
+- **Defaults follow sharing.** New spending on an unshared account is personal to
+  the owner; on a shared account it's shared until someone says otherwise.
+- **Who paid comes from the account owner** (Phase 4 uses this for "who owes whom").
+- **Settlement for N members:** each member's share = their personal spending +
+  weight × shared spending. Outlays are reported separately.
 - **Closing a month** stores a `Settlement` snapshot, so later edits don't quietly
   change history.
 
@@ -134,12 +143,18 @@ and create a rule if they accept, so categorization improves per household over 
 - [ ] Confirm the raw Amex date format with a real export (assumed `MM/DD/YYYY` or ISO)
 - [ ] CI (GitHub Actions) running `pytest core`, backend tests and `npm run typecheck`
 
-### Phase 1: Multi-tenant model and auth
-- Households, memberships, accounts, imports and the transaction model above
-- Hosted auth + the dependency that resolves the current household
-- Migration script loading existing data as household #1
-- Tenant-isolation tests
-- ✅ Done when both household members log in and see the same household
+### Phase 1: Multi-tenant model and auth (branch `phase-1-multi-tenant`)
+- [x] User-owned accounts, optional households, memberships with split weights,
+      imports and the transaction model above (Alembic migrations; the PoC tables are dropped)
+- [x] Supabase Auth: the backend verifies the JWT (JWKS, or the legacy shared
+      secret) and creates a `User` on first request; magic-link sign-in in the frontend
+- [x] Access dependencies in `access.py`; household routes (create, members,
+      weights, leave), accounts with sharing, transactions, per-account imports
+- [x] Deduplication on import (`spending_core.dedupe_hashes`), since the model needs it anyway
+- [x] Tenant-isolation tests
+- [x] Supabase project created; both members signed in and see the same household
+- ~~Load the PoC data as household #1~~ (dropped: not worth importing)
+- [ ] Verify the migrations against Postgres (Docker still wasn't running)
 
 ### Phase 2: Imports
 - Importer interface, `AmexSE`, generic CSV mapper with saved mappings
@@ -164,8 +179,9 @@ mobile app, notifications when a budget is exceeded.
 
 ## 9. Open questions (change the design)
 
-1. **Can one person belong to several households** (e.g. shared + private)? The
-   membership table supports it either way, but the UI must handle switching.
+1. ~~**Can one person belong to several households?**~~ Decided in Phase 1: the app
+   is user-first and households are optional. A user can be in several; the UI
+   has a "My view" / household switcher.
 2. **Is the split always weighted per household, or sometimes per transaction or
    category?** E.g. groceries 50/50 but rent by income.
 3. **Free and private for friends, or possibly paid later?** Affects the auth

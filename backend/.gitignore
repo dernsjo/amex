@@ -4,5 +4,5 @@ __pycache__/
 
 # Ignore the database
 db.sqlite3
-expenses.db
+*.db
 .env
