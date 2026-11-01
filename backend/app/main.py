@@ -5,7 +5,7 @@ from .routes import router
 from .settings import settings
 
 # Schema is managed by Alembic: run `alembic upgrade head` before starting.
-app = FastAPI(title="Expense Tracker API")
+app = FastAPI(title="Spending API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,4 +19,4 @@ app.include_router(router)
 
 @app.get("/")
 def home():
-    return {"message": "Expense Tracker API is running!"}
+    return {"message": "Spending API is running"}

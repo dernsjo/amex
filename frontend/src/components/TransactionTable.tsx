@@ -1,50 +1,63 @@
 import { useState } from "react";
-import { deleteExpense, errorMessage, updateExpense } from "../api";
-import type { Expense } from "../api";
+import { ALLOCATIONS, deleteTransaction, errorMessage, kr, updateTransaction } from "../api";
+import type { Account, Allocation, Transaction, TransactionChanges } from "../api";
 
 interface Props {
-    expenses: Expense[];
-    paidByOptions: string[];
+    me: number;
+    transactions: Transaction[];
+    accounts: Account[];
     categories: string[];
-    fetchExpenses: () => Promise<void>;
+    fetchTransactions: () => Promise<void>;
 }
 
 interface Draft {
     id: number;
-    paid_by: string;
+    allocation: Allocation;
+    member_id: number | null;
     category: string;
 }
 
-const Select = ({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) => (
+interface Option {
+    value: string;
+    label: string;
+}
+
+const Select = ({ value, options, onChange }: { value: string; options: Option[]; onChange: (v: string) => void }) => (
     <select value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((option) => (
-            <option key={option} value={option}>
-                {option}
+            <option key={option.value} value={option.value}>
+                {option.label}
             </option>
         ))}
     </select>
 );
 
-function ExpenseTable({ expenses, paidByOptions, categories, fetchExpenses }: Props) {
-    // The row being edited; clicking its Paid By or Category cell starts editing both.
+function TransactionTable({ me, transactions, accounts, categories, fetchTransactions }: Props) {
+    // The row being edited; clicking its Category or Allocation cell starts editing.
     const [draft, setDraft] = useState<Draft | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const startEditing = (expense: Expense) => {
-        setDraft({ id: expense.id, paid_by: expense.paid_by, category: expense.category ?? "Other" });
+    const accountById = new Map(accounts.map((a) => [a.id, a]));
+    const personName = (t: Transaction) =>
+        accountById.get(t.account_id)?.members.find((m) => m.user_id === t.member_id)?.display_name ?? "?";
+
+    const startEditing = (t: Transaction) => {
+        setDraft({ id: t.id, allocation: t.allocation, member_id: t.member_id, category: t.category ?? "Other" });
     };
 
-    const handleSave = async (expense: Expense) => {
+    const handleSave = async (t: Transaction) => {
         if (!draft) return;
         setError(null);
         try {
-            const changes = {
-                ...(draft.paid_by !== expense.paid_by && { paid_by: draft.paid_by }),
-                ...(draft.category !== expense.category && { category: draft.category }),
+            const changes: TransactionChanges = {
+                ...(draft.allocation !== t.allocation && { allocation: draft.allocation }),
+                ...(draft.allocation === "personal" &&
+                    draft.member_id !== t.member_id && { member_id: draft.member_id }),
+                ...(draft.category !== t.category && { category: draft.category }),
             };
             if (Object.keys(changes).length > 0) {
-                await updateExpense(expense.id, changes);
-                await fetchExpenses();
+                await updateTransaction(t.id, changes);
+                await fetchTransactions();
             }
             setDraft(null);
         } catch (e) {
@@ -52,11 +65,11 @@ function ExpenseTable({ expenses, paidByOptions, categories, fetchExpenses }: Pr
         }
     };
 
-    const handleDeleteExpense = async (expenseId: number) => {
+    const handleDelete = async (transactionId: number) => {
         setError(null);
         try {
-            await deleteExpense(expenseId);
-            await fetchExpenses();
+            await deleteTransaction(transactionId);
+            await fetchTransactions();
         } catch (e) {
             setError(errorMessage(e));
         }
@@ -64,62 +77,86 @@ function ExpenseTable({ expenses, paidByOptions, categories, fetchExpenses }: Pr
 
     return (
         <div>
-            <h3>Expense Table</h3>
-            <p>Click a Paid By or Category value to edit it.</p>
+            <h3>Transactions</h3>
+            <p>Click a Category or Allocation value to edit it.</p>
             {error && <p role="alert">{error}</p>}
             <table border={1} style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                     <tr>
                         <th>Date</th>
                         <th>Description</th>
+                        <th>Account</th>
                         <th>Category</th>
                         <th>Amount</th>
-                        <th>Paid By</th>
+                        <th>Allocation</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {expenses.map((expense) => {
-                        const editing = draft?.id === expense.id ? draft : null;
+                    {transactions.map((t) => {
+                        const editing = draft?.id === t.id ? draft : null;
+                        const account = accountById.get(t.account_id);
+                        const members = account?.members ?? [];
                         return (
-                            <tr key={expense.id}>
-                                <td>{expense.date}</td>
-                                <td>{expense.description}</td>
+                            <tr key={t.id}>
+                                <td>{t.booked_on}</td>
+                                <td>{t.description}</td>
+                                <td>{account?.name}</td>
                                 <td>
                                     {editing ? (
                                         <Select
                                             value={editing.category}
-                                            options={categories}
+                                            options={categories.map((c) => ({ value: c, label: c }))}
                                             onChange={(category) => setDraft({ ...editing, category })}
                                         />
                                     ) : (
-                                        <span style={{ cursor: "pointer" }} onClick={() => startEditing(expense)}>
-                                            {expense.category ?? "—"}
+                                        <span style={{ cursor: "pointer" }} onClick={() => startEditing(t)}>
+                                            {t.category ?? "—"}
                                         </span>
                                     )}
                                 </td>
-                                <td>{expense.amount.toFixed(2)}</td>
+                                <td>{kr(t.amount_minor, t.currency)}</td>
                                 <td>
                                     {editing ? (
-                                        <Select
-                                            value={editing.paid_by}
-                                            options={paidByOptions}
-                                            onChange={(paid_by) => setDraft({ ...editing, paid_by })}
-                                        />
+                                        <>
+                                            <Select
+                                                value={editing.allocation}
+                                                options={ALLOCATIONS.map((a) => ({ value: a, label: a }))}
+                                                onChange={(v) =>
+                                                    setDraft({
+                                                        ...editing,
+                                                        allocation: v as Allocation,
+                                                        member_id: editing.member_id ?? account?.owner.user_id ?? null,
+                                                    })
+                                                }
+                                            />
+                                            {editing.allocation === "personal" && members.length > 1 && (
+                                                <Select
+                                                    value={String(editing.member_id ?? "")}
+                                                    options={members.map((m) => ({
+                                                        value: String(m.user_id),
+                                                        label: m.display_name,
+                                                    }))}
+                                                    onChange={(v) => setDraft({ ...editing, member_id: Number(v) })}
+                                                />
+                                            )}
+                                        </>
                                     ) : (
-                                        <span style={{ cursor: "pointer" }} onClick={() => startEditing(expense)}>
-                                            {expense.paid_by}
+                                        <span style={{ cursor: "pointer" }} onClick={() => startEditing(t)}>
+                                            {t.allocation === "personal" ? `personal: ${personName(t)}` : t.allocation}
                                         </span>
                                     )}
                                 </td>
                                 <td>
                                     {editing ? (
                                         <>
-                                            <button onClick={() => handleSave(expense)}>Save</button>
+                                            <button onClick={() => handleSave(t)}>Save</button>
                                             <button onClick={() => setDraft(null)}>Cancel</button>
                                         </>
                                     ) : (
-                                        <button onClick={() => handleDeleteExpense(expense.id)}>Delete</button>
+                                        account?.owner.user_id === me && (
+                                            <button onClick={() => handleDelete(t.id)}>Delete</button>
+                                        )
                                     )}
                                 </td>
                             </tr>
@@ -131,4 +168,4 @@ function ExpenseTable({ expenses, paidByOptions, categories, fetchExpenses }: Pr
     );
 }
 
-export default ExpenseTable;
+export default TransactionTable;

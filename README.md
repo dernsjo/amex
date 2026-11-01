@@ -1,5 +1,5 @@
 # amex
-Monthly spend analysis and expense splitting for a household.
+Monthly spend analysis, with optional expense splitting in a household.
 
 | Directory | What |
 |---|---|
@@ -24,6 +24,14 @@ pytest core
 cd backend && pytest
 cd frontend && npm run typecheck
 ```
+
+## Auth (Supabase)
+Create a project at supabase.com (EU region), then:
+- `backend/.env`: `SUPABASE_URL` (see `backend/.env.example`)
+- `frontend/.env.local`: `VITE_SUPABASE_URL` and `VITE_SUPABASE_KEY` (the publishable/anon key)
+- In Supabase, Authentication → URL Configuration: add `http://localhost:5173` as a redirect URL
+
+Sign-in is by magic link to your email.
 
 ## Run
 Backend (see `backend/README.md` for Postgres):

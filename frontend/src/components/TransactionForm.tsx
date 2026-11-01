@@ -1,45 +1,51 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { createExpense, errorMessage } from "../api";
+import { createTransaction, errorMessage } from "../api";
+import type { Account } from "../api";
+import AccountSelect from "./AccountSelect";
 
 interface Props {
-    paidByOptions: string[];
+    accounts: Account[]; // the user's own accounts
     categories: string[];
-    fetchExpenses: () => Promise<void>;
+    fetchTransactions: () => Promise<void>;
 }
 
-function ExpenseForm({ paidByOptions, categories, fetchExpenses }: Props) {
+function TransactionForm({ accounts, categories, fetchTransactions }: Props) {
+    const [accountId, setAccountId] = useState<number | null>(null);
     const [description, setDescription] = useState("");
     const [amount, setAmount] = useState("");
-    const [paidBy, setPaidBy] = useState("Split");
     const [category, setCategory] = useState(""); // "" = categorize automatically
     const [error, setError] = useState<string | null>(null);
 
-    const handleAddExpense = async (event: FormEvent) => {
+    const selected = accountId ?? accounts[0]?.id ?? null;
+
+    const handleAdd = async (event: FormEvent) => {
         event.preventDefault();
+        if (selected === null) return;
         setError(null);
         try {
-            // The server fills in today's date, and a category unless one is picked.
-            await createExpense({
+            // The server fills in today's date, an allocation, and a category unless one is picked.
+            await createTransaction(selected, {
                 description,
                 amount: parseFloat(amount),
-                paid_by: paidBy,
                 ...(category && { category }),
             });
             setDescription("");
             setAmount("");
-            setPaidBy("Split");
             setCategory("");
-            await fetchExpenses();
+            await fetchTransactions();
         } catch (e) {
             setError(errorMessage(e));
         }
     };
 
+    if (accounts.length === 0) return null;
+
     return (
         <div>
-            <h2>Add Expense</h2>
-            <form onSubmit={handleAddExpense}>
+            <h2>Add Transaction</h2>
+            <form onSubmit={handleAdd}>
+                <AccountSelect accounts={accounts} value={selected} onChange={setAccountId} />
                 <input
                     type="text"
                     placeholder="Description"
@@ -55,13 +61,6 @@ function ExpenseForm({ paidByOptions, categories, fetchExpenses }: Props) {
                     onChange={(e) => setAmount(e.target.value)}
                     required
                 />
-                <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
-                    {paidByOptions.map((option) => (
-                        <option key={option} value={option}>
-                            {option}
-                        </option>
-                    ))}
-                </select>
                 <select value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="">Category: auto</option>
                     {categories.map((option) => (
@@ -70,11 +69,11 @@ function ExpenseForm({ paidByOptions, categories, fetchExpenses }: Props) {
                         </option>
                     ))}
                 </select>
-                <button type="submit">Add Expense</button>
+                <button type="submit">Add Transaction</button>
                 {error && <p role="alert">{error}</p>}
             </form>
         </div>
     );
 }
 
-export default ExpenseForm;
+export default TransactionForm;

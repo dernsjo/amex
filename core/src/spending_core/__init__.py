@@ -6,6 +6,7 @@ Amounts are always integer minor units (öre) to avoid float rounding.
 
 from .amex import ParsedTransaction, parse_amex_csv
 from .categorize import DEFAULT_CATEGORIES, DEFAULT_TARGETS_SEK, categorize
+from .dedupe import dedupe_hashes, normalize_description
 from .errors import ImportFileError
 from .money import format_minor, parse_amount, to_minor
 from .settlement import Allocation, Line, Settlement, allocation_from_label, settle
@@ -20,7 +21,9 @@ __all__ = [
     "Settlement",
     "allocation_from_label",
     "categorize",
+    "dedupe_hashes",
     "format_minor",
+    "normalize_description",
     "parse_amex_csv",
     "parse_amount",
     "settle",
